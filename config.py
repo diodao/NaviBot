@@ -4,7 +4,7 @@
 TOKEN = '6951228291:AAHpvIyR7hFX-THCFc2P7-lG8WqKFCrf5b4'
 
 # Пути к файлам
-RENTAL_DATA_FILE = '/Users/kapelan/Downloads/NaviBot/rental_data.xlsx'
+RENTAL_DATA_FILE = 'rental_data.xlsx'
 LOG_FILE = '/Users/kapelan/Downloads/NaviBot/bot.log'
 
 # Форматы (для отображения и валидации)
