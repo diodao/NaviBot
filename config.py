@@ -5,7 +5,7 @@ TOKEN = '6951228291:AAHpvIyR7hFX-THCFc2P7-lG8WqKFCrf5b4'
 
 # Пути к файлам
 RENTAL_DATA_FILE = 'rental_data.xlsx'
-LOG_FILE = '/Users/kapelan/Downloads/NaviBot/bot.log'
+LOG_FILE = 'bot.log'  # Изменили на относительный путь
 
 # Форматы (для отображения и валидации)
 DATE_FORMAT = 'DD.MM.YY'
