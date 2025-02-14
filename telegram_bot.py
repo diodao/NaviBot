@@ -16,7 +16,7 @@ from telegram.ext import (
 import config
 import rental_calculator  # импортируйте модуль с функциями расчёта
 
-# === Flask-сервер для работы в качестве веб-сервиса (Render/Beget требует, чтобы приложение слушало порт) ===
+# === Flask-сервер для работы в качестве веб-сервиса (Render требует, чтобы приложение слушало порт) ===
 app = Flask(__name__)
 
 @app.route('/')
@@ -24,7 +24,7 @@ def index():
     return 'ok'
 
 def run_flask():
-    # Получаем порт из переменной окружения PORT, если её нет – используем 5000
+    # Render передаёт порт через переменную окружения PORT, если её нет – используем 5000
     port = int(os.environ.get('PORT', 5000))
     # Запускаем Flask на всех интерфейсах
     app.run(host='0.0.0.0', port=port)
@@ -43,7 +43,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     except Exception as e:
         await update.message.reply_text(f"Ошибка при обработке запроса: {e}")
 
-# Команда для обновления базы данных (используем латинское название update_bd)
+# Команда для обновления базы данных – используем латинское имя update_bd,
+# поскольку команда не может содержать кириллицу.
 async def update_bd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         rental_calculator.load_data(force_reload=True)
@@ -63,27 +64,23 @@ async def main_async():
     # Удаляем webhook, если он установлен
     await application.bot.delete_webhook(drop_pending_updates=True)
 
-    # Инициализируем и запускаем polling
+    # Инициализируем и запускаем polling – никаких лишних параметров!
     await application.initialize()
     await application.run_polling()
 
-    # Эта строка удерживает цикл событий (никогда не завершается)
-    await asyncio.Future()
-
-# === Функция main: запускаем Flask-сервер в отдельном потоке и бота в основном потоке ===
+# === Функция main: запускаем Flask-сервер в отдельном потоке и бота в главном потоке ===
 def main():
-    # Запускаем Flask-сервер в отдельном daemon‑потоке (чтобы приложение слушало указанный порт)
+    # Запускаем Flask-сервер в отдельном daemon‑потоке
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
 
-    # Получаем или создаём event loop
+    # Получаем или создаём event loop и запускаем задачу для бота
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-    # Добавляем задачу для запуска бота и запускаем цикл событий бесконечно
     loop.create_task(main_async())
     loop.run_forever()
 
