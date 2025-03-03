@@ -9,7 +9,6 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-# Глобальное кэширование данных из Excel
 _data_cache = None
 
 def load_data():
@@ -34,7 +33,6 @@ def refresh_data():
     _data_cache = load_data()
     logging.info("Данные обновлены.")
 
-# Вспомогательные функции
 def parse_time_str(time_str):
     return datetime.datetime.strptime(time_str.strip(), "%H:%M").time()
 
@@ -118,22 +116,30 @@ def compute_overlap(seg_start, seg_end, int_start, int_end):
     return max(delta, 0)
 
 def calculate_segment_cost_and_hours(seg_start, seg_end, schedule, discount_factor=1.0):
-    """Рассчитывает стоимость и часы для сегмента с учётом реального времени."""
+    """Рассчитывает стоимость и фиксирует реальное время сегмента."""
     total_hours = (seg_end - seg_start).total_seconds() / 3600.0  # Реальное время сегмента
+    effective_hours = total_hours * discount_factor  # Учитываем скидку для тех. времени
     cost = 0.0
     breakdown = []
-    hours_covered = 0.0
+    hours_remaining = total_hours
     for int_start, int_end, price in schedule:
         overlap = compute_overlap(seg_start, seg_end, int_start, int_end)
         if overlap > 0:
-            hours_covered += overlap
-            effective_hours = overlap * discount_factor
-            cost_seg = effective_hours * price
-            cost += cost_seg
-            breakdown.append((price, effective_hours))
-    if abs(total_hours - hours_covered) > 0.01:
-        logging.warning(f"Сегмент {seg_start}–{seg_end}: не все часы покрыты тарифами ({total_hours} vs {hours_covered})")
-    return cost, breakdown, total_hours * discount_factor
+            overlap_hours = min(overlap, hours_remaining)
+            effective_overlap = overlap_hours * discount_factor
+            cost += price * effective_overlap
+            breakdown.append((price, effective_overlap))
+            hours_remaining -= overlap_hours
+        if hours_remaining <= 0:
+            break
+    if hours_remaining > 0.01:
+        logging.warning(f"Сегмент {seg_start}–{seg_end}: не все часы покрыты тарифами ({hours_remaining} ч остались)")
+        # Используем последний тариф для оставшихся часов
+        if schedule:
+            last_price = schedule[-1][2]
+            cost += last_price * (hours_remaining * discount_factor)
+            breakdown.append((last_price, hours_remaining * discount_factor))
+    return cost, breakdown, effective_hours
 
 def aggregate_breakdown(breakdowns):
     agg = {}
@@ -208,7 +214,6 @@ def calculate_rental(date_obj, boat_name, times):
     boarding_date = boarding_dt.date()
     schedule = get_pricing_schedule(boat_name, boarding_date)
 
-    # Рассчитываем стоимость и реальные часы для каждого сегмента
     if full_format:
         prep_cost, prep_breakdown, prep_hours = calculate_segment_cost_and_hours(prep_start, boarding_dt, schedule, discount_factor=0.5)
         main_cost, main_breakdown, main_hours = calculate_segment_cost_and_hours(boarding_dt, disembarking_dt, schedule, discount_factor=1.0)
@@ -236,8 +241,7 @@ def calculate_rental(date_obj, boat_name, times):
             f"{fmt_time(disembarking_dt)} - Высадка\n"
             f"{fmt_time(unloading_dt)} - Разгрузка (50%)\n"
             f"Причал: {dock}\n"
-            f"Аренда: {breakdown_str} + {int(cleaning_cost)}₽ (уборка) = {int(total_cost)}₽\n"
-            f"Общее время аренды: {total_hours:.2f}ч"
+            f"Аренда: {breakdown_str} + {int(cleaning_cost)}₽ (уборка) = {int(total_cost)}₽"
         )
     else:
         result = (
@@ -246,29 +250,17 @@ def calculate_rental(date_obj, boat_name, times):
             f"{fmt_time(boarding_dt)} - Посадка\n"
             f"{fmt_time(disembarking_dt)} - Высадка\n"
             f"Причал: {dock}\n"
-            f"Аренда: {breakdown_str} + {int(cleaning_cost)}₽ (уборка) = {int(total_cost)}₽\n"
-            f"Общее время аренды: {total_hours:.2f}ч"
+            f"Аренда: {breakdown_str} + {int(cleaning_cost)}₽ (уборка) = {int(total_cost)}₽"
         )
     return result
 
 if __name__ == '__main__':
-    # Тестовые запросы с разными интервалами
-    test_requests = [
-        """09.08.25
+    test_request = """09.08.25
 Переяслав
-09:30-10:30-13:30-14:00""",  # 3.75 часа
-        """17.07.25
-Амели
-13:00-14:00-19:00-19:30""",  # 5.75 часа
-        """09.07.25
-Хемингуэй
-17:00-18:00-23:00-23:30"""  # 5.75 часа
-    ]
-    for req in test_requests:
-        try:
-            date_obj, boat_name, times = parse_request(req)
-            result = calculate_rental(date_obj, boat_name, times)
-            print(result)
-            print("\n" + "-"*50 + "\n")
-        except Exception as e:
-            logging.error("Ошибка при расчёте: %s", e)
+09:30-10:30-13:30-14:00"""
+    try:
+        date_obj, boat_name, times = parse_request(test_request)
+        result = calculate_rental(date_obj, boat_name, times)
+        print(result)
+    except Exception as e:
+        logging.error("Ошибка при расчёте: %s", e)
