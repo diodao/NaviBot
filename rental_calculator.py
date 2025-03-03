@@ -149,11 +149,11 @@ def calculate_rental_cost_and_breakdown(start_time, end_time, schedule, discount
         if seg_hours <= 0:
             break
         
-        # Реальные часы аренды для этого сегмента
-        real_hours = seg_hours * discount_factor
+        # Реальные часы аренды для этого сегмента с учётом discount_factor
+        effective_hours = seg_hours * discount_factor
         hours_covered = 0.0
         
-        # Сортируем пересечения по времени начала
+        # Список пересечений для текущего сегмента
         overlaps = []
         for int_start, int_end, price in schedule:
             overlap = compute_overlap(current_time, next_time, int_start, int_end)
@@ -161,13 +161,17 @@ def calculate_rental_cost_and_breakdown(start_time, end_time, schedule, discount
                 overlap_start = max(current_time, int_start)
                 overlaps.append((overlap_start, price, overlap))
         
+        # Сортируем по времени начала пересечения
         overlaps.sort(key=lambda x: x[0])
+        
         for overlap_start, price, overlap_hours in overlaps:
-            if hours_covered < real_hours:
-                hours_to_add = min(overlap_hours * discount_factor, real_hours - hours_covered)
-                total_cost += price * hours_to_add
-                all_overlaps.append((overlap_start, price, hours_to_add))
-                hours_covered += hours_to_add
+            if hours_covered < effective_hours:
+                # Доля пересечения для этого тарифа
+                overlap_fraction = min(overlap_hours, (effective_hours - hours_covered) / discount_factor)
+                effective_overlap = overlap_fraction * discount_factor
+                total_cost += price * effective_overlap
+                all_overlaps.append((overlap_start, price, effective_overlap))
+                hours_covered += effective_overlap
         
         current_time = next_time
 
