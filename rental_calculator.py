@@ -115,123 +115,35 @@ def compute_overlap(seg_start, seg_end, int_start, int_end):
     delta = (earliest_end - latest_start).total_seconds() / 3600.0
     return max(delta, 0)
 
-def calculate_rental_cost_and_breakdown(start_time, end_time, schedule, discount_factors):
-    total_cost = 0.0
-    all_overlaps = []
+def calculate_segment_cost(seg_start, seg_end, schedule, discount_factor=1.0):
+    cost = 0.0
+    breakdown = []
+    total_hours = (seg_end - seg_start).total_seconds() / 3600.0
+    hours_covered = 0.0
     
-    # Сегменты аренды с коэффициентами
-    discount_points = [(start_time, discount_factors[0][1])]
-    if len(discount_factors) > 1:
-        boarding_dt = discount_factors[1][0]
-        disembarking_dt = discount_factors[2][0]
-        discount_points.append((boarding_dt, discount_factors[1][1]))
-        discount_points.append((disembarking_dt, discount_factors[2][1]))
-    discount_points.append((end_time, 0))
-
-    # Обрабатываем весь интервал аренды последовательно
-    current_time = start_time
-    while current_time < end_time:
-        # Находим текущий discount_factor
-        discount_factor = 1.0
-        for i in range(len(discount_points) - 1):
-            if discount_points[i][0] <= current_time < discount_points[i + 1][0]:
-                discount_factor = discount_points[i][1]
-                break
-        
-        # Находим следующий переход
-        next_time = end_time
-        for dp_time, _ in discount_points:
-            if dp_time > current_time:
-                next_time = min(next_time, dp_time)
-                break
-        
-        seg_hours = (next_time - current_time).total_seconds() / 3600.0
-        if seg_hours <= 0:
-            break
-        
-        # Реальные часы аренды для этого сегмента с учётом discount_factor
-        effective_hours = seg_hours * discount_factor
-        hours_covered = 0.0
-        
-        # Список пересечений для текущего сегмента
-        overlaps = []
-        for int_start, int_end, price in schedule:
-            overlap = compute_overlap(current_time, next_time, int_start, int_end)
-            if overlap > 0:
-                overlap_start = max(current_time, int_start)
-                overlaps.append((overlap_start, price, overlap))
-        
-        # Сортируем по времени начала пересечения
-        overlaps.sort(key=lambda x: x[0])
-        
-        for overlap_start, price, overlap_hours in overlaps:
-            if hours_covered < effective_hours:
-                # Доля пересечения для этого тарифа
-                overlap_fraction = min(overlap_hours, (effective_hours - hours_covered) / discount_factor)
-                effective_overlap = overlap_fraction * discount_factor
-                total_cost += price * effective_overlap
-                all_overlaps.append((overlap_start, price, effective_overlap))
-                hours_covered += effective_overlap
-        
-        current_time = next_time
-
-    # Агрегируем по тарифам с сохранением порядка
-    agg = {}
-    order = []
-    for _, price, hours in all_overlaps:
-        if price not in agg:
-            agg[price] = 0
-            order.append(price)
-        agg[price] += hours
+    overlaps = []
+    for int_start, int_end, price in schedule:
+        overlap = compute_overlap(seg_start, seg_end, int_start, int_end)
+        if overlap > 0:
+            overlap_start = max(seg_start, int_start)
+            overlaps.append((overlap_start, price, overlap))
     
-    breakdown = [(price, agg[price]) for price in order]
-    return total_cost, breakdown
-
-def format_breakdown(breakdown):
-    parts = []
-    for price, hours in breakdown:
-        formatted_price = f"{int(price):,}".replace(",", " ")
-        parts.append(f"({formatted_price}₽/ч x {hours:.2f}ч)")
-    return " + ".join(parts) if parts else "(0₽/ч x 0.00ч)"
-
-def normalize_boat_name(name):
-    name_lower = name.strip().lower()
-    return [name_lower, name_lower.replace("е", "ё"), name_lower.replace("ё", "е")]
-
-def parse_request(message_text):
-    lines = [line.strip() for line in message_text.splitlines() if line.strip()]
-    if len(lines) < 3:
-        raise ValueError("Некорректный формат запроса. Должны быть не менее 3 строк.")
-    date_str = lines[0]
-    boat_name = lines[1]
-    times_str = lines[2]
-    time_parts = times_str.split("-")
-    normalized_times = []
-    for part in time_parts:
-        if ":" in part:
-            normalized_times.append(part)
-        else:
-            normalized_times.append(part + ":00")
-    if len(normalized_times) not in [2, 4]:
-        raise ValueError("Ожидается 2 или 4 временных значения.")
-    try:
-        date_obj = datetime.datetime.strptime(date_str, "%d.%m.%y").date()
-    except Exception as e:
-        raise ValueError("Неверный формат даты, ожидается dd.mm.yy.") from e
-    times = []
-    for t_str in normalized_times:
-        try:
-            t_obj = datetime.datetime.strptime(t_str, "%H:%M").time()
-            times.append(t_obj)
-        except Exception as e:
-            raise ValueError(f"Неверный формат времени: {t_str}") from e
-    return date_obj, boat_name, times
+    overlaps.sort(key=lambda x: x[0])  # Сортируем по времени начала пересечения
+    
+    for overlap_start, price, overlap_hours in overlaps:
+        if hours_covered < total_hours:
+            hours_to_add = min(overlap_hours, total_hours - hours_covered)
+            effective_hours = hours_to_add * discount_factor
+            cost += price * effective_hours
+            breakdown.append((overlap_start, price, effective_hours))
+            hours_covered += hours_to_add
+    
+    return cost, breakdown
 
 def calculate_rental(date_obj, boat_name, times):
     data = get_data()
     boats_df = data["Теплоходы"]
-    possible_names = normalize_boat_name(boat_name)
-    boat_rows = boats_df[boats_df["Название теплохода"].str.strip().str.lower().isin(possible_names)]
+    boat_rows = boats_df[boats_df["Название теплохода"].str.strip().str.lower() == boat_name.lower()]
     if boat_rows.empty:
         raise ValueError(f"Теплоход '{boat_name}' не найден.")
     boat_info = boat_rows.iloc[0]
@@ -261,22 +173,31 @@ def calculate_rental(date_obj, boat_name, times):
         unloading_dt = disembarking_dt
 
     boarding_date = boarding_dt.date()
-    schedule = get_pricing_schedule(boat_info["Название теплохода"], boarding_date)
+    schedule = get_pricing_schedule(boat_name, boarding_date)
 
     if full_format:
-        discount_factors = [
-            (prep_start, 0.5),      # Подготовка
-            (boarding_dt, 1.0),     # Основное время
-            (disembarking_dt, 0.5)  # Разгрузка
-        ]
-        total_cost, breakdown = calculate_rental_cost_and_breakdown(prep_start, unloading_dt, schedule, discount_factors)
+        prep_cost, prep_breakdown = calculate_segment_cost(prep_start, boarding_dt, schedule, discount_factor=0.5)
+        main_cost, main_breakdown = calculate_segment_cost(boarding_dt, disembarking_dt, schedule, discount_factor=1.0)
+        unload_cost, unload_breakdown = calculate_segment_cost(disembarking_dt, unloading_dt, schedule, discount_factor=0.5)
+        total_cost = prep_cost + main_cost + unload_cost + float(cleaning_cost)
+        all_breakdown = prep_breakdown + main_breakdown + unload_breakdown
     else:
-        discount_factors = [(boarding_dt, 1.0)]
-        total_cost, breakdown = calculate_rental_cost_and_breakdown(boarding_dt, disembarking_dt, schedule, discount_factors)
+        main_cost, main_breakdown = calculate_segment_cost(boarding_dt, disembarking_dt, schedule, discount_factor=1.0)
+        total_cost = main_cost + float(cleaning_cost)
+        all_breakdown = main_breakdown
 
-    total_cost += float(cleaning_cost)
-    breakdown_str = format_breakdown(breakdown)
-    formatted_total_cost = f"{int(total_cost):,}".replace(",", " ")
+    # Сортируем breakdown по времени начала и агрегируем
+    all_breakdown.sort(key=lambda x: x[0])  # Сортировка по времени начала
+    agg = {}
+    order = []
+    for _, price, hours in all_breakdown:
+        if price not in agg:
+            agg[price] = 0
+            order.append(price)
+        agg[price] += hours
+    
+    breakdown = [(price, agg[price]) for price in order]
+    breakdown_str = " + ".join(f"({int(price):,}₽/ч x {hours:.2f}ч)".replace(",", " ") for price, hours in breakdown)
 
     def fmt_time(dt):
         return dt.strftime("%H:%M")
@@ -284,22 +205,22 @@ def calculate_rental(date_obj, boat_name, times):
     if full_format:
         result = (
             f"*{date_obj.strftime('%d.%m.%y')}*\n\n"
-            f"*{boat_info['Название теплохода']}* - {link}\n"
+            f"*{boat_name}* - {link}\n"
             f"{fmt_time(prep_start)} - Подготовка (50%)\n"
             f"{fmt_time(boarding_dt)} - Посадка\n"
             f"{fmt_time(disembarking_dt)} - Высадка\n"
             f"{fmt_time(unloading_dt)} - Разгрузка (50%)\n"
             f"Причал: {dock}\n"
-            f"Аренда: {breakdown_str} + {int(cleaning_cost)}₽ (уборка) = *{formatted_total_cost}*₽"
+            f"Аренда: {breakdown_str} + {int(cleaning_cost)}₽ (уборка) = *{int(total_cost):,}*₽".replace(",", " ")
         )
     else:
         result = (
             f"*{date_obj.strftime('%d.%m.%y')}*\n\n"
-            f"*{boat_info['Название теплохода']}* - {link}\n"
+            f"*{boat_name}* - {link}\n"
             f"{fmt_time(boarding_dt)} - Посадка\n"
             f"{fmt_time(disembarking_dt)} - Высадка\n"
             f"Причал: {dock}\n"
-            f"Аренда: {breakdown_str} + {int(cleaning_cost)}₽ (уборка) = *{formatted_total_cost}*₽"
+            f"Аренда: {breakdown_str} + {int(cleaning_cost)}₽ (уборка) = *{int(total_cost):,}*₽".replace(",", " ")
         )
     return result
 
