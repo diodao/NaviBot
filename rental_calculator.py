@@ -118,8 +118,8 @@ def compute_overlap(seg_start, seg_end, int_start, int_end):
 def calculate_segment_cost(seg_start, seg_end, schedule, discount_factor=1.0):
     cost = 0.0
     breakdown = []
-    total_hours = (seg_end - seg_start).total_seconds() / 3600.0
-    effective_total_hours = total_hours * discount_factor
+    total_hours = (seg_end - seg_start).total_seconds() / 3600.0  # Реальное время сегмента
+    effective_total_hours = total_hours * discount_factor  # Эффективное время с учётом скидки
     hours_covered = 0.0
     
     overlaps = []
@@ -129,8 +129,10 @@ def calculate_segment_cost(seg_start, seg_end, schedule, discount_factor=1.0):
             overlap_start = max(seg_start, int_start)
             overlaps.append((overlap_start, price, overlap))
     
-    overlaps.sort(key=lambda x: x[0])  # Сортировка по времени начала пересечения
+    # Сортируем по времени начала пересечения для правильного порядка
+    overlaps.sort(key=lambda x: x[0])
     
+    # Распределяем реальные часы между тарифами
     for overlap_start, price, overlap_hours in overlaps:
         if hours_covered < total_hours:
             real_hours_to_add = min(overlap_hours, total_hours - hours_covered)
@@ -139,8 +141,9 @@ def calculate_segment_cost(seg_start, seg_end, schedule, discount_factor=1.0):
             breakdown.append((overlap_start, price, effective_hours))
             hours_covered += real_hours_to_add
     
+    # Проверяем, все ли часы покрыты
     if hours_covered < total_hours - 0.01:
-        logging.warning(f"Сегмент {seg_start}–{seg_end}: не все часы покрыты тарифами ({total_hours - hours_covered} ч остались)")
+        logging.warning(f"Сегмент {seg_start}–{seg_end}: не все часы покрыты тарифами ({total_hours - hours_covered:.2f} ч остались)")
     
     return cost, breakdown
 
