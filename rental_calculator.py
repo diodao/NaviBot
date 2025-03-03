@@ -115,39 +115,73 @@ def compute_overlap(seg_start, seg_end, int_start, int_end):
     delta = (earliest_end - latest_start).total_seconds() / 3600.0
     return max(delta, 0)
 
-def calculate_segment_cost_and_hours(seg_start, seg_end, schedule, discount_factor=1.0):
-    total_hours = (seg_end - seg_start).total_seconds() / 3600.0
-    effective_hours = total_hours * discount_factor
-    cost = 0.0
+def calculate_rental_cost_and_breakdown(start_time, end_time, schedule, discount_factors):
+    """Считает стоимость и breakdown для всего интервала с учётом тарифов и discount_factors."""
+    total_cost = 0.0
     breakdown = []
-    hours_remaining = total_hours
-    for int_start, int_end, price in schedule:
-        overlap = compute_overlap(seg_start, seg_end, int_start, int_end)
-        if overlap > 0:
-            overlap_hours = min(overlap, hours_remaining)
-            effective_overlap = overlap_hours * discount_factor
-            cost += price * effective_overlap
-            breakdown.append((price, effective_overlap))
-            hours_remaining -= overlap_hours
-        if hours_remaining <= 0:
-            break
-    if hours_remaining > 0.01:
-        logging.warning(f"Сегмент {seg_start}–{seg_end}: не все часы покрыты тарифами ({hours_remaining} ч остались)")
-        if schedule:
-            last_price = schedule[-1][2]
-            cost += last_price * (hours_remaining * discount_factor)
-            breakdown.append((last_price, hours_remaining * discount_factor))
-    return cost, breakdown, effective_hours
+    current_time = start_time
+    remaining_hours = (end_time - start_time).total_seconds() / 3600.0
+    
+    # Разбиваем интервал по точкам смены discount_factor
+    time_points = [(start_time, discount_factors[0])]
+    if len(discount_factors) > 1:
+        boarding_dt = discount_factors[1][0]
+        disembarking_dt = discount_factors[2][0]
+        time_points.append((boarding_dt, discount_factors[1][1]))
+        time_points.append((disembarking_dt, discount_factors[2][1]))
+    time_points.append((end_time, 0))  # Конец интервала
 
-def aggregate_breakdown(breakdowns):
-    agg = {}
-    for price, hours in breakdowns:
-        agg[price] = agg.get(price, 0) + hours
+    for i in range(len(time_points) - 1):
+        seg_start = time_points[i][0]
+        seg_end = time_points[i + 1][0]
+        discount_factor = time_points[i][1]
+        seg_hours = (seg_end - seg_start).total_seconds() / 3600.0
+        if seg_hours <= 0:
+            continue
+        effective_hours = seg_hours * discount_factor
+        hours_covered = 0.0
+        seg_breakdown = []
+        for int_start, int_end, price in schedule:
+            overlap = compute_overlap(seg_start, seg_end, int_start, int_end)
+            if overlap > 0:
+                overlap_hours = min(overlap, seg_hours - hours_covered)
+                effective_overlap = overlap_hours * discount_factor
+                total_cost += price * effective_overlap
+                seg_breakdown.append((price, effective_overlap))
+                hours_covered += overlap_hours
+                if hours_covered >= seg_hours:
+                    break
+        if hours_covered < seg_hours - 0.01:
+            logging.warning(f"Интервал {seg_start}–{seg_end}: не все часы покрыты тарифами ({seg_hours - hours_covered} ч остались)")
+            if schedule:
+                last_price = schedule[-1][2]
+                remaining_effective = (seg_hours - hours_covered) * discount_factor
+                total_cost += last_price * remaining_effective
+                seg_breakdown.append((last_price, remaining_effective))
+        breakdown.extend(seg_breakdown)
+    
+    # Собираем breakdown в порядке времени
+    agg_breakdown = []
+    seen_hours = 0.0
+    for price, hours in sorted(breakdown, key=lambda x: breakdown.index(x)):  # Сохраняем порядок добавления
+        if seen_hours < 3.75:  # Ограничение по общему времени аренды
+            hours_to_add = min(hours, 3.75 - seen_hours)
+            if hours_to_add > 0:
+                agg_breakdown.append((price, hours_to_add))
+                seen_hours += hours_to_add
+    
+    return total_cost, agg_breakdown
+
+def format_breakdown(breakdown):
     parts = []
-    for price, hours in agg.items():
-        formatted_price = f"{int(price):,}".replace(",", " ")  # Разделяем тысячи пробелом
+    for price, hours in breakdown:
+        formatted_price = f"{int(price):,}".replace(",", " ")
         parts.append(f"({formatted_price}₽/ч x {hours:.2f}ч)")
-    return " + ".join(parts)
+    return " + ".join(parts) if parts else "(0₽/ч x 0.00ч)"
+
+def normalize_boat_name(name):
+    name_lower = name.strip().lower()
+    return [name_lower, name_lower.replace("е", "ё"), name_lower.replace("ё", "е")]
 
 def parse_request(message_text):
     lines = [line.strip() for line in message_text.splitlines() if line.strip()]
@@ -178,15 +212,9 @@ def parse_request(message_text):
             raise ValueError(f"Неверный формат времени: {t_str}") from e
     return date_obj, boat_name, times
 
-def normalize_boat_name(name):
-    """Нормализует название теплохода, заменяя 'е' на 'ё' и наоборот для поиска."""
-    name_lower = name.strip().lower()
-    return [name_lower, name_lower.replace("е", "ё"), name_lower.replace("ё", "е")]
-
 def calculate_rental(date_obj, boat_name, times):
     data = get_data()
     boats_df = data["Теплоходы"]
-    # Проверяем все варианты написания названия теплохода
     possible_names = normalize_boat_name(boat_name)
     boat_rows = boats_df[boats_df["Название теплохода"].str.strip().str.lower().isin(possible_names)]
     if boat_rows.empty:
@@ -218,22 +246,22 @@ def calculate_rental(date_obj, boat_name, times):
         unloading_dt = disembarking_dt
 
     boarding_date = boarding_dt.date()
-    # Используем оригинальное название из базы для тарифов
     schedule = get_pricing_schedule(boat_info["Название теплохода"], boarding_date)
 
     if full_format:
-        prep_cost, prep_breakdown, prep_hours = calculate_segment_cost_and_hours(prep_start, boarding_dt, schedule, discount_factor=0.5)
-        main_cost, main_breakdown, main_hours = calculate_segment_cost_and_hours(boarding_dt, disembarking_dt, schedule, discount_factor=1.0)
-        unload_cost, unload_breakdown, unload_hours = calculate_segment_cost_and_hours(disembarking_dt, unloading_dt, schedule, discount_factor=0.5)
+        discount_factors = [
+            (prep_start, 0.5),      # Подготовка
+            (boarding_dt, 1.0),     # Основное время
+            (disembarking_dt, 0.5)  # Разгрузка
+        ]
+        total_cost, breakdown = calculate_rental_cost_and_breakdown(prep_start, unloading_dt, schedule, discount_factors)
     else:
-        main_cost, main_breakdown, main_hours = calculate_segment_cost_and_hours(boarding_dt, disembarking_dt, schedule, discount_factor=1.0)
-        prep_cost, unload_cost = 0, 0
-        prep_breakdown, unload_breakdown = [], []
+        discount_factors = [(boarding_dt, 1.0)]
+        total_cost, breakdown = calculate_rental_cost_and_breakdown(boarding_dt, disembarking_dt, schedule, discount_factors)
 
-    total_cost = prep_cost + main_cost + unload_cost + float(cleaning_cost)
-    overall_breakdown = prep_breakdown + main_breakdown + unload_breakdown
-    breakdown_str = aggregate_breakdown(overall_breakdown)
-    formatted_total_cost = f"{int(total_cost):,}".replace(",", " ")  # Разделяем тысячи в итоговой сумме
+    total_cost += float(cleaning_cost)
+    breakdown_str = format_breakdown(breakdown)
+    formatted_total_cost = f"{int(total_cost):,}".replace(",", " ")
 
     def fmt_time(dt):
         return dt.strftime("%H:%M")
@@ -261,19 +289,12 @@ def calculate_rental(date_obj, boat_name, times):
     return result
 
 if __name__ == '__main__':
-    test_requests = [
-        """09.08.25
-Самсон
-09:30-10:30-13:30-14:00""",
-        """09.08.25
-Аленка
+    test_request = """09.08.25
+Миконос
 09:30-10:30-13:30-14:00"""
-    ]
-    for req in test_requests:
-        try:
-            date_obj, boat_name, times = parse_request(req)
-            result = calculate_rental(date_obj, boat_name, times)
-            print(result)
-            print("\n" + "-"*50 + "\n")
-        except Exception as e:
-            logging.error("Ошибка при расчёте: %s", e)
+    try:
+        date_obj, boat_name, times = parse_request(test_request)
+        result = calculate_rental(date_obj, boat_name, times)
+        print(result)
+    except Exception as e:
+        logging.error("Ошибка при расчёте: %s", e)
