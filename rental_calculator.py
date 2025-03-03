@@ -116,9 +116,8 @@ def compute_overlap(seg_start, seg_end, int_start, int_end):
     return max(delta, 0)
 
 def calculate_segment_cost_and_hours(seg_start, seg_end, schedule, discount_factor=1.0):
-    """Рассчитывает стоимость и фиксирует реальное время сегмента."""
-    total_hours = (seg_end - seg_start).total_seconds() / 3600.0  # Реальное время сегмента
-    effective_hours = total_hours * discount_factor  # Учитываем скидку для тех. времени
+    total_hours = (seg_end - seg_start).total_seconds() / 3600.0
+    effective_hours = total_hours * discount_factor
     cost = 0.0
     breakdown = []
     hours_remaining = total_hours
@@ -134,7 +133,6 @@ def calculate_segment_cost_and_hours(seg_start, seg_end, schedule, discount_fact
             break
     if hours_remaining > 0.01:
         logging.warning(f"Сегмент {seg_start}–{seg_end}: не все часы покрыты тарифами ({hours_remaining} ч остались)")
-        # Используем последний тариф для оставшихся часов
         if schedule:
             last_price = schedule[-1][2]
             cost += last_price * (hours_remaining * discount_factor)
@@ -147,7 +145,8 @@ def aggregate_breakdown(breakdowns):
         agg[price] = agg.get(price, 0) + hours
     parts = []
     for price, hours in agg.items():
-        parts.append(f"({int(price)}₽/ч x {hours:.2f}ч)")
+        formatted_price = f"{int(price):,}".replace(",", " ")  # Разделяем тысячи пробелом
+        parts.append(f"({formatted_price}₽/ч x {hours:.2f}ч)")
     return " + ".join(parts)
 
 def parse_request(message_text):
@@ -179,10 +178,17 @@ def parse_request(message_text):
             raise ValueError(f"Неверный формат времени: {t_str}") from e
     return date_obj, boat_name, times
 
+def normalize_boat_name(name):
+    """Нормализует название теплохода, заменяя 'е' на 'ё' и наоборот для поиска."""
+    name_lower = name.strip().lower()
+    return [name_lower, name_lower.replace("е", "ё"), name_lower.replace("ё", "е")]
+
 def calculate_rental(date_obj, boat_name, times):
     data = get_data()
     boats_df = data["Теплоходы"]
-    boat_rows = boats_df[boats_df["Название теплохода"].str.strip().str.lower() == boat_name.lower()]
+    # Проверяем все варианты написания названия теплохода
+    possible_names = normalize_boat_name(boat_name)
+    boat_rows = boats_df[boats_df["Название теплохода"].str.strip().str.lower().isin(possible_names)]
     if boat_rows.empty:
         raise ValueError(f"Теплоход '{boat_name}' не найден.")
     boat_info = boat_rows.iloc[0]
@@ -212,55 +218,62 @@ def calculate_rental(date_obj, boat_name, times):
         unloading_dt = disembarking_dt
 
     boarding_date = boarding_dt.date()
-    schedule = get_pricing_schedule(boat_name, boarding_date)
+    # Используем оригинальное название из базы для тарифов
+    schedule = get_pricing_schedule(boat_info["Название теплохода"], boarding_date)
 
     if full_format:
         prep_cost, prep_breakdown, prep_hours = calculate_segment_cost_and_hours(prep_start, boarding_dt, schedule, discount_factor=0.5)
         main_cost, main_breakdown, main_hours = calculate_segment_cost_and_hours(boarding_dt, disembarking_dt, schedule, discount_factor=1.0)
         unload_cost, unload_breakdown, unload_hours = calculate_segment_cost_and_hours(disembarking_dt, unloading_dt, schedule, discount_factor=0.5)
-        total_hours = prep_hours + main_hours + unload_hours
     else:
         main_cost, main_breakdown, main_hours = calculate_segment_cost_and_hours(boarding_dt, disembarking_dt, schedule, discount_factor=1.0)
         prep_cost, unload_cost = 0, 0
         prep_breakdown, unload_breakdown = [], []
-        total_hours = main_hours
 
     total_cost = prep_cost + main_cost + unload_cost + float(cleaning_cost)
     overall_breakdown = prep_breakdown + main_breakdown + unload_breakdown
     breakdown_str = aggregate_breakdown(overall_breakdown)
+    formatted_total_cost = f"{int(total_cost):,}".replace(",", " ")  # Разделяем тысячи в итоговой сумме
 
     def fmt_time(dt):
         return dt.strftime("%H:%M")
 
     if full_format:
         result = (
-            f"{date_obj.strftime('%d.%m.%y')}\n\n"
-            f"{boat_name} - {link}\n"
+            f"*{date_obj.strftime('%d.%m.%y')}*\n\n"
+            f"*{boat_info['Название теплохода']}* - {link}\n"
             f"{fmt_time(prep_start)} - Подготовка (50%)\n"
             f"{fmt_time(boarding_dt)} - Посадка\n"
             f"{fmt_time(disembarking_dt)} - Высадка\n"
             f"{fmt_time(unloading_dt)} - Разгрузка (50%)\n"
             f"Причал: {dock}\n"
-            f"Аренда: {breakdown_str} + {int(cleaning_cost)}₽ (уборка) = {int(total_cost)}₽"
+            f"Аренда: {breakdown_str} + {int(cleaning_cost)}₽ (уборка) = *{formatted_total_cost}*₽"
         )
     else:
         result = (
-            f"{date_obj.strftime('%d.%m.%y')}\n\n"
-            f"{boat_name} - {link}\n"
+            f"*{date_obj.strftime('%d.%m.%y')}*\n\n"
+            f"*{boat_info['Название теплохода']}* - {link}\n"
             f"{fmt_time(boarding_dt)} - Посадка\n"
             f"{fmt_time(disembarking_dt)} - Высадка\n"
             f"Причал: {dock}\n"
-            f"Аренда: {breakdown_str} + {int(cleaning_cost)}₽ (уборка) = {int(total_cost)}₽"
+            f"Аренда: {breakdown_str} + {int(cleaning_cost)}₽ (уборка) = *{formatted_total_cost}*₽"
         )
     return result
 
 if __name__ == '__main__':
-    test_request = """09.08.25
-Переяслав
+    test_requests = [
+        """09.08.25
+Самсон
+09:30-10:30-13:30-14:00""",
+        """09.08.25
+Аленка
 09:30-10:30-13:30-14:00"""
-    try:
-        date_obj, boat_name, times = parse_request(test_request)
-        result = calculate_rental(date_obj, boat_name, times)
-        print(result)
-    except Exception as e:
-        logging.error("Ошибка при расчёте: %s", e)
+    ]
+    for req in test_requests:
+        try:
+            date_obj, boat_name, times = parse_request(req)
+            result = calculate_rental(date_obj, boat_name, times)
+            print(result)
+            print("\n" + "-"*50 + "\n")
+        except Exception as e:
+            logging.error("Ошибка при расчёте: %s", e)

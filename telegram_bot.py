@@ -1,6 +1,4 @@
-# telegram_bot.py
 import logging
-import re
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -19,7 +17,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Команда /start – вывод инструкции
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     welcome_text = (
         "Привет! Я бот для расчёта стоимости аренды теплоходов.\n\n"
@@ -33,7 +30,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
     await update.message.reply_text(welcome_text, disable_web_page_preview=True)
 
-# Команда /update_data – обновление базы данных
 async def update_data_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         refresh_data()
@@ -42,11 +38,9 @@ async def update_data_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         logger.error("Ошибка обновления базы: %s", e)
         await update.message.reply_text(f"Ошибка обновления базы: {e}", disable_web_page_preview=True)
 
-# Обработчик текстовых сообщений
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = update.message.text.strip()
     
-    # Если сообщение содержит фразу "Обнови базу" (без учета регистра)
     if text.lower() == "обнови базу":
         await update.message.reply_text("Обновляю базу...", disable_web_page_preview=True)
         try:
@@ -57,13 +51,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await update.message.reply_text(f"Ошибка обновления базы: {e}", disable_web_page_preview=True)
         return
 
-    # Удаляем пустые строки и собираем все непустые строки
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     if not lines:
         await update.message.reply_text("Пустое сообщение.", disable_web_page_preview=True)
         return
 
-    # Если общее число строк не кратно 3, выдаём ошибку
     if len(lines) % 3 != 0:
         await update.message.reply_text(
             "Ошибка: общее число непустых строк должно быть кратно 3 (дата, название, временной интервал для каждого запроса).",
@@ -72,7 +64,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
 
     responses = []
-    # Группируем строки по 3 (каждый запрос)
     for i in range(0, len(lines), 3):
         block_lines = lines[i:i+3]
         block_text = "\n".join(block_lines)
@@ -83,9 +74,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         except Exception as e:
             logger.error("Ошибка при обработке блока: %s", e)
             responses.append(f"Ошибка при обработке запроса:\n{block_text}\nОшибка: {e}")
-    # Объединяем ответы через разделитель
-    reply = "\n\n" + ("-" * 50) + "\n\n"
-    reply = reply.join(responses)
+
+    # Объединяем ответы без разделителей, просто через двойной перенос строки
+    reply = "\n\n".join(responses)
     await update.message.reply_text(reply, disable_web_page_preview=True)
 
 def main() -> None:
