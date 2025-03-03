@@ -115,12 +115,12 @@ def compute_overlap(seg_start, seg_end, int_start, int_end):
     delta = (earliest_end - latest_start).total_seconds() / 3600.0
     return max(delta, 0)
 
-def calculate_segment_cost(seg_start, seg_end, schedule, discount_factor=1.0):
+def calculate_segment_cost_and_hours(seg_start, seg_end, schedule, discount_factor=1.0):
+    total_hours = (seg_end - seg_start).total_seconds() / 3600.0
+    effective_hours = total_hours * discount_factor
     cost = 0.0
     breakdown = []
-    total_hours = (seg_end - seg_start).total_seconds() / 3600.0  # Реальное время сегмента
-    effective_total_hours = total_hours * discount_factor  # Эффективное время с учётом скидки
-    hours_covered = 0.0
+    hours_remaining = total_hours
     
     overlaps = []
     for int_start, int_end, price in schedule:
@@ -129,23 +129,24 @@ def calculate_segment_cost(seg_start, seg_end, schedule, discount_factor=1.0):
             overlap_start = max(seg_start, int_start)
             overlaps.append((overlap_start, price, overlap))
     
-    # Сортируем по времени начала пересечения для правильного порядка
-    overlaps.sort(key=lambda x: x[0])
+    overlaps.sort(key=lambda x: x[0])  # Сортировка по времени начала
     
-    # Распределяем реальные часы между тарифами
     for overlap_start, price, overlap_hours in overlaps:
-        if hours_covered < total_hours:
-            real_hours_to_add = min(overlap_hours, total_hours - hours_covered)
-            effective_hours = real_hours_to_add * discount_factor
-            cost += price * effective_hours
-            breakdown.append((overlap_start, price, effective_hours))
-            hours_covered += real_hours_to_add
+        if hours_remaining > 0:
+            overlap_hours = min(overlap_hours, hours_remaining)
+            effective_overlap = overlap_hours * discount_factor
+            cost += price * effective_overlap
+            breakdown.append((overlap_start, price, effective_overlap))
+            hours_remaining -= overlap_hours
     
-    # Проверяем, все ли часы покрыты
-    if hours_covered < total_hours - 0.01:
-        logging.warning(f"Сегмент {seg_start}–{seg_end}: не все часы покрыты тарифами ({total_hours - hours_covered:.2f} ч остались)")
+    if hours_remaining > 0.01:
+        logging.warning(f"Сегмент {seg_start}–{seg_end}: не все часы покрыты тарифами ({hours_remaining} ч остались)")
+        if schedule:
+            last_price = schedule[-1][2]
+            cost += last_price * (hours_remaining * discount_factor)
+            breakdown.append((seg_end, last_price, hours_remaining * discount_factor))
     
-    return cost, breakdown
+    return cost, breakdown, effective_hours
 
 def normalize_boat_name(name):
     name_lower = name.strip().lower()
@@ -217,13 +218,13 @@ def calculate_rental(date_obj, boat_name, times):
     schedule = get_pricing_schedule(boat_info["Название теплохода"], boarding_date)
 
     if full_format:
-        prep_cost, prep_breakdown = calculate_segment_cost(prep_start, boarding_dt, schedule, discount_factor=0.5)
-        main_cost, main_breakdown = calculate_segment_cost(boarding_dt, disembarking_dt, schedule, discount_factor=1.0)
-        unload_cost, unload_breakdown = calculate_segment_cost(disembarking_dt, unloading_dt, schedule, discount_factor=0.5)
+        prep_cost, prep_breakdown, prep_hours = calculate_segment_cost_and_hours(prep_start, boarding_dt, schedule, discount_factor=0.5)
+        main_cost, main_breakdown, main_hours = calculate_segment_cost_and_hours(boarding_dt, disembarking_dt, schedule, discount_factor=1.0)
+        unload_cost, unload_breakdown, unload_hours = calculate_segment_cost_and_hours(disembarking_dt, unloading_dt, schedule, discount_factor=0.5)
         total_cost = prep_cost + main_cost + unload_cost + float(cleaning_cost)
         all_breakdown = prep_breakdown + main_breakdown + unload_breakdown
     else:
-        main_cost, main_breakdown = calculate_segment_cost(boarding_dt, disembarking_dt, schedule, discount_factor=1.0)
+        main_cost, main_breakdown, main_hours = calculate_segment_cost_and_hours(boarding_dt, disembarking_dt, schedule, discount_factor=1.0)
         total_cost = main_cost + float(cleaning_cost)
         all_breakdown = main_breakdown
 
