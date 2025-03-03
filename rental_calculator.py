@@ -117,10 +117,9 @@ def compute_overlap(seg_start, seg_end, int_start, int_end):
 
 def calculate_rental_cost_and_breakdown(start_time, end_time, schedule, discount_factors):
     total_cost = 0.0
-    breakdown_with_time = []  # Сохраняем время начала для сортировки
-    current_time = start_time
-    remaining_hours = (end_time - start_time).total_seconds() / 3600.0
+    breakdown = []
     
+    # Определяем сегменты аренды и их коэффициенты
     time_points = [(start_time, discount_factors[0][1])]
     if len(discount_factors) > 1:
         boarding_dt = discount_factors[1][0]
@@ -129,6 +128,7 @@ def calculate_rental_cost_and_breakdown(start_time, end_time, schedule, discount
         time_points.append((disembarking_dt, discount_factors[2][1]))
     time_points.append((end_time, 0))
 
+    # Обрабатываем каждый сегмент в порядке времени
     for i in range(len(time_points) - 1):
         seg_start = time_points[i][0]
         seg_end = time_points[i + 1][0]
@@ -138,32 +138,30 @@ def calculate_rental_cost_and_breakdown(start_time, end_time, schedule, discount
             continue
         effective_hours = seg_hours * discount_factor
         hours_covered = 0.0
-        for int_start, int_end, price in schedule:
+        seg_breakdown = []
+        
+        # Сортируем schedule для каждого сегмента, чтобы тарифы шли по времени начала
+        sorted_schedule = sorted(schedule, key=lambda x: x[0])
+        for int_start, int_end, price in sorted_schedule:
             overlap = compute_overlap(seg_start, seg_end, int_start, int_end)
             if overlap > 0:
                 overlap_hours = min(overlap, seg_hours - hours_covered)
                 effective_overlap = overlap_hours * discount_factor
                 total_cost += price * effective_overlap
-                # Добавляем время начала интервала для сортировки
-                breakdown_with_time.append((int_start, price, effective_overlap))
+                seg_breakdown.append((price, effective_overlap))
                 hours_covered += overlap_hours
                 if hours_covered >= seg_hours:
                     break
         if hours_covered < seg_hours - 0.01:
             logging.warning(f"Интервал {seg_start}–{seg_end}: не все часы покрыты тарифами ({seg_hours - hours_covered} ч остались)")
             if schedule:
-                last_price = schedule[-1][2]
+                last_price = sorted_schedule[-1][2]
                 remaining_effective = (seg_hours - hours_covered) * discount_factor
                 total_cost += last_price * remaining_effective
-                breakdown_with_time.append((seg_end, last_price, remaining_effective))
+                seg_breakdown.append((last_price, remaining_effective))
+        breakdown.extend(seg_breakdown)
     
-    # Сортируем по времени начала, затем агрегируем по тарифам
-    breakdown_with_time.sort(key=lambda x: x[0])  # Сортировка по int_start
-    breakdown = [(price, hours) for _, price, hours in breakdown_with_time]
-    return total_cost, breakdown
-
-def format_breakdown(breakdown):
-    # Агрегируем часы по тарифам, сохраняя порядок первого появления
+    # Агрегируем breakdown с сохранением порядка
     agg = {}
     order = []
     for price, hours in breakdown:
@@ -171,9 +169,14 @@ def format_breakdown(breakdown):
             agg[price] = 0
             order.append(price)
         agg[price] += hours
+    
+    # Формируем итоговый breakdown в порядке появления
+    final_breakdown = [(price, agg[price]) for price in order]
+    return total_cost, final_breakdown
+
+def format_breakdown(breakdown):
     parts = []
-    for price in order:  # Используем порядок появления тарифов
-        hours = agg[price]
+    for price, hours in breakdown:
         formatted_price = f"{int(price):,}".replace(",", " ")
         parts.append(f"({formatted_price}₽/ч x {hours:.2f}ч)")
     return " + ".join(parts) if parts else "(0₽/ч x 0.00ч)"
