@@ -1,4 +1,3 @@
-# rental_calculator.py
 import pandas as pd
 import datetime
 import logging
@@ -14,10 +13,6 @@ logging.basicConfig(
 _data_cache = None
 
 def load_data():
-    """
-    Загружает данные из файла rental_data.xlsx.
-    Ожидается наличие двух листов: "Теплоходы" и "Цены".
-    """
     try:
         boats_df = pd.read_excel(RENTAL_DATA_FILE, sheet_name="Теплоходы", engine="openpyxl")
         prices_df = pd.read_excel(RENTAL_DATA_FILE, sheet_name="Цены", engine="openpyxl")
@@ -29,29 +24,21 @@ def load_data():
         raise
 
 def get_data():
-    """Возвращает кэшированные данные; при первом обращении загружает их."""
     global _data_cache
     if _data_cache is None:
         _data_cache = load_data()
     return _data_cache
 
 def refresh_data():
-    """Обновляет кэшированные данные из Excel."""
     global _data_cache
     _data_cache = load_data()
     logging.info("Данные обновлены.")
 
-# --- Вспомогательные функции для работы с датами и временем ---
-
+# Вспомогательные функции
 def parse_time_str(time_str):
-    """Парсит строку вида '10:00' в объект datetime.time."""
     return datetime.datetime.strptime(time_str.strip(), "%H:%M").time()
 
 def parse_time_range(range_str):
-    """
-    Из строки вида "10:00 - 18:00" возвращает пару time объектов (start, end).
-    Если start >= end, считаем, что интервал переходит через полночь.
-    """
     parts = range_str.split("-")
     if len(parts) != 2:
         raise ValueError(f"Неверный формат временного диапазона: {range_str}")
@@ -60,16 +47,10 @@ def parse_time_range(range_str):
     return start, end
 
 def weekday_short(dt):
-    """Возвращает сокращённое название дня недели для даты dt (Monday -> 'Пн', ..., Sunday -> 'Вс')."""
     mapping = {0:"Пн", 1:"Вт", 2:"Ср", 3:"Чт", 4:"Пт", 5:"Сб", 6:"Вс"}
     return mapping[dt.weekday()]
 
 def weekday_in_range(day_short, range_str):
-    """
-    Проверяет, входит ли день (например, 'Ср') в диапазон, заданный строкой.
-    Например, если range_str="Пн-Чт", то 'Ср' входит; если range_str="Пт-Вс", то 'Ср' не входит.
-    Дополнительно допускается перечисление через запятую.
-    """
     options = [opt.strip() for opt in range_str.split(",")]
     for opt in options:
         if "-" in opt:
@@ -88,18 +69,7 @@ def weekday_in_range(day_short, range_str):
                 return True
     return False
 
-# --- Функции для формирования расписания тарифов на день ---
-
 def get_pricing_schedule(boat_name, boarding_date):
-    """
-    Для заданного теплохода и даты посадки (boarding_date) выбирает из таблицы "Цены"
-    все строки, для которых:
-      - boarding_date входит в [Дата начала, Дата окончания] (даты берутся как date)
-      - день недели посадки (boarding_date) удовлетворяет условию в столбце "День недели"
-    Для каждой подходящей строки формируется кортеж:
-       (start_datetime, end_datetime, price)
-    Если время в диапазоне переходит через полночь, end_datetime увеличивается на 1 день.
-    """
     data = get_data()
     prices_df = data["Цены"]
     schedule = []
@@ -110,7 +80,6 @@ def get_pricing_schedule(boat_name, boarding_date):
         if str(row["Название теплохода"]).strip().lower() != boat_name.lower():
             continue
         try:
-            # Используем pd.to_datetime для корректного преобразования дат
             start_date = pd.to_datetime(row["Дата начала"]).date()
             end_date = pd.to_datetime(row["Дата окончания"]).date()
         except Exception as e:
@@ -143,66 +112,39 @@ def get_pricing_schedule(boat_name, boarding_date):
     return schedule
 
 def compute_overlap(seg_start, seg_end, int_start, int_end):
-    """
-    Вычисляет пересечение интервала [seg_start, seg_end] с интервалом [int_start, int_end] в часах.
-    Возвращает продолжительность в часах (float). Если пересечения нет – 0.
-    """
     latest_start = max(seg_start, int_start)
     earliest_end = min(seg_end, int_end)
     delta = (earliest_end - latest_start).total_seconds() / 3600.0
     return max(delta, 0)
 
-def calculate_segment_cost(boat_name, seg_start, seg_end, boarding_date, discount_factor=1.0):
-    """
-    Для заданного сегмента аренды (с datetime seg_start и seg_end) вычисляет стоимость и формирует
-    breakdown – список кортежей (tariff, effective_hours).
-    discount_factor – множитель (например, 0.5 для технических часов).
-    Возвращает: (стоимость сегмента (float), breakdown (list))
-    """
-    schedule = get_pricing_schedule(boat_name, boarding_date)
+def calculate_segment_cost_and_hours(seg_start, seg_end, schedule, discount_factor=1.0):
+    """Рассчитывает стоимость и часы для сегмента с учётом реального времени."""
+    total_hours = (seg_end - seg_start).total_seconds() / 3600.0  # Реальное время сегмента
     cost = 0.0
     breakdown = []
+    hours_covered = 0.0
     for int_start, int_end, price in schedule:
         overlap = compute_overlap(seg_start, seg_end, int_start, int_end)
         if overlap > 0:
+            hours_covered += overlap
             effective_hours = overlap * discount_factor
             cost_seg = effective_hours * price
             cost += cost_seg
             breakdown.append((price, effective_hours))
-    return cost, breakdown
+    if abs(total_hours - hours_covered) > 0.01:
+        logging.warning(f"Сегмент {seg_start}–{seg_end}: не все часы покрыты тарифами ({total_hours} vs {hours_covered})")
+    return cost, breakdown, total_hours * discount_factor
 
 def aggregate_breakdown(breakdowns):
-    """
-    Принимает список breakdown, состоящий из кортежей (tariff, effective_hours),
-    и агрегирует их по тарифу.
-    Возвращает строку вида:
-      "(16000₽/ч x 4.75ч) + (15000₽/ч x 1.5ч)"
-    """
     agg = {}
     for price, hours in breakdowns:
         agg[price] = agg.get(price, 0) + hours
     parts = []
     for price, hours in agg.items():
-        parts.append(f"({int(price)}₽/ч x {round(hours,2)}ч)")
+        parts.append(f"({int(price)}₽/ч x {hours:.2f}ч)")
     return " + ".join(parts)
 
-# --- Функция для разбора запроса менеджера ---
-
 def parse_request(message_text):
-    """
-    Ожидаемый формат запроса:
-      07.09.25
-      Антверпен
-      21:30-22:30-02:30-03:00
-    или (без технических часов):
-      07.09.25
-      Антверпен
-      18-22
-    Возвращает: (date_obj, boat_name, times)
-       где times – список объектов datetime.time.
-       Если 4 значения – [prep, boarding, disembarking, unloading];
-       Если 2 – [boarding, disembarking].
-    """
     lines = [line.strip() for line in message_text.splitlines() if line.strip()]
     if len(lines) < 3:
         raise ValueError("Некорректный формат запроса. Должны быть не менее 3 строк.")
@@ -231,15 +173,7 @@ def parse_request(message_text):
             raise ValueError(f"Неверный формат времени: {t_str}") from e
     return date_obj, boat_name, times
 
-# --- Основная функция расчёта аренды ---
-
 def calculate_rental(date_obj, boat_name, times):
-    """
-    Производит расчёт аренды и возвращает отформатированную строку-ответ.
-    Если times содержит 4 значения – учитываются технические интервалы,
-    если 2 – используется только основной интервал.
-    В строке "Аренда:" выводится подробный расчёт тарифов.
-    """
     data = get_data()
     boats_df = data["Теплоходы"]
     boat_rows = boats_df[boats_df["Название теплохода"].str.strip().str.lower() == boat_name.lower()]
@@ -249,6 +183,7 @@ def calculate_rental(date_obj, boat_name, times):
     link = boat_info.get("Ссылка", f"https://example.com/{boat_name.lower()}")
     dock = boat_info.get("Адрес причала", "Неизвестный причал")
     cleaning_cost = boat_info.get("Стоимость уборки", CLEANING_COST)
+
     full_format = (len(times) == 4)
     if full_format:
         prep_time, boarding_time, disembarking_time, unloading_time = times
@@ -271,16 +206,24 @@ def calculate_rental(date_obj, boat_name, times):
         unloading_dt = disembarking_dt
 
     boarding_date = boarding_dt.date()
+    schedule = get_pricing_schedule(boat_name, boarding_date)
 
-    # Рассчитываем стоимость сегментов и получаем breakdown для каждого
-    prep_cost, prep_breakdown = calculate_segment_cost(boat_name, prep_start, boarding_dt, boarding_date, discount_factor=0.5)
-    main_cost, main_breakdown = calculate_segment_cost(boat_name, boarding_dt, disembarking_dt, boarding_date, discount_factor=1.0)
-    unload_cost, unload_breakdown = calculate_segment_cost(boat_name, disembarking_dt, unloading_dt, boarding_date, discount_factor=0.5)
+    # Рассчитываем стоимость и реальные часы для каждого сегмента
+    if full_format:
+        prep_cost, prep_breakdown, prep_hours = calculate_segment_cost_and_hours(prep_start, boarding_dt, schedule, discount_factor=0.5)
+        main_cost, main_breakdown, main_hours = calculate_segment_cost_and_hours(boarding_dt, disembarking_dt, schedule, discount_factor=1.0)
+        unload_cost, unload_breakdown, unload_hours = calculate_segment_cost_and_hours(disembarking_dt, unloading_dt, schedule, discount_factor=0.5)
+        total_hours = prep_hours + main_hours + unload_hours
+    else:
+        main_cost, main_breakdown, main_hours = calculate_segment_cost_and_hours(boarding_dt, disembarking_dt, schedule, discount_factor=1.0)
+        prep_cost, unload_cost = 0, 0
+        prep_breakdown, unload_breakdown = [], []
+        total_hours = main_hours
 
     total_cost = prep_cost + main_cost + unload_cost + float(cleaning_cost)
     overall_breakdown = prep_breakdown + main_breakdown + unload_breakdown
     breakdown_str = aggregate_breakdown(overall_breakdown)
-    
+
     def fmt_time(dt):
         return dt.strftime("%H:%M")
 
@@ -293,7 +236,8 @@ def calculate_rental(date_obj, boat_name, times):
             f"{fmt_time(disembarking_dt)} - Высадка\n"
             f"{fmt_time(unloading_dt)} - Разгрузка (50%)\n"
             f"Причал: {dock}\n"
-            f"Аренда: {breakdown_str} + {int(cleaning_cost)}₽ (уборка) = {int(total_cost)}₽"
+            f"Аренда: {breakdown_str} + {int(cleaning_cost)}₽ (уборка) = {int(total_cost)}₽\n"
+            f"Общее время аренды: {total_hours:.2f}ч"
         )
     else:
         result = (
@@ -302,28 +246,25 @@ def calculate_rental(date_obj, boat_name, times):
             f"{fmt_time(boarding_dt)} - Посадка\n"
             f"{fmt_time(disembarking_dt)} - Высадка\n"
             f"Причал: {dock}\n"
-            f"Аренда: {breakdown_str} + {int(cleaning_cost)}₽ (уборка) = {int(total_cost)}₽"
+            f"Аренда: {breakdown_str} + {int(cleaning_cost)}₽ (уборка) = {int(total_cost)}₽\n"
+            f"Общее время аренды: {total_hours:.2f}ч"
         )
     return result
 
-# --- Для тестирования модуля ---
 if __name__ == '__main__':
-    # Пример запроса для Антверпена (уже тестировался):
-    sample_request1 = """07.09.25
-Антверпен
-21:30-22:30-02:30-03:00"""
-    
-    # Пример запроса для Амели:
-    sample_request2 = """17.07.25
+    # Тестовые запросы с разными интервалами
+    test_requests = [
+        """09.08.25
+Переяслав
+09:30-10:30-13:30-14:00""",  # 3.75 часа
+        """17.07.25
 Амели
-13-14-19-19:30"""
-    
-    # Пример запроса для Хемингуэй:
-    sample_request3 = """09.07.25
+13:00-14:00-19:00-19:30""",  # 5.75 часа
+        """09.07.25
 Хемингуэй
-17-18-23-23:30"""
-    
-    for req in [sample_request1, sample_request2, sample_request3]:
+17:00-18:00-23:00-23:30"""  # 5.75 часа
+    ]
+    for req in test_requests:
         try:
             date_obj, boat_name, times = parse_request(req)
             result = calculate_rental(date_obj, boat_name, times)
