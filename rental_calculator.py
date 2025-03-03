@@ -106,6 +106,7 @@ def get_pricing_schedule(boat_name, boarding_date):
         schedule.append((dt_start, dt_end, price))
     if not schedule:
         logging.warning("Для теплохода '%s' и даты %s не найдено подходящих тарифных строк.", boat_name, boarding_date)
+    schedule.sort(key=lambda x: x[0])
     return schedule
 
 def compute_overlap(seg_start, seg_end, int_start, int_end):
@@ -137,7 +138,7 @@ def calculate_rental_cost_and_breakdown(start_time, end_time, schedule, discount
                 discount_factor = discount_points[i][1]
                 break
         
-        # Находим следующий переход (либо конец сегмента, либо конец аренды)
+        # Находим следующий переход
         next_time = end_time
         for dp_time, _ in discount_points:
             if dp_time > current_time:
@@ -148,31 +149,25 @@ def calculate_rental_cost_and_breakdown(start_time, end_time, schedule, discount
         if seg_hours <= 0:
             break
         
-        # Сортируем пересечения по времени начала для текущего сегмента
+        # Реальные часы аренды для этого сегмента
+        real_hours = seg_hours * discount_factor
+        hours_covered = 0.0
+        
+        # Сортируем пересечения по времени начала
         overlaps = []
         for int_start, int_end, price in schedule:
             overlap = compute_overlap(current_time, next_time, int_start, int_end)
             if overlap > 0:
                 overlap_start = max(current_time, int_start)
-                overlaps.append((overlap_start, price, overlap * discount_factor))
+                overlaps.append((overlap_start, price, overlap))
         
-        # Добавляем пересечения в порядке времени начала
         overlaps.sort(key=lambda x: x[0])
-        hours_covered = 0.0
-        for overlap_start, price, effective_hours in overlaps:
-            if hours_covered < seg_hours:
-                hours_to_add = min(effective_hours, seg_hours - hours_covered)
+        for overlap_start, price, overlap_hours in overlaps:
+            if hours_covered < real_hours:
+                hours_to_add = min(overlap_hours * discount_factor, real_hours - hours_covered)
                 total_cost += price * hours_to_add
                 all_overlaps.append((overlap_start, price, hours_to_add))
                 hours_covered += hours_to_add
-        
-        if hours_covered < seg_hours - 0.01:
-            logging.warning(f"Интервал {current_time}–{next_time}: не все часы покрыты тарифами ({seg_hours - hours_covered} ч остались)")
-            if schedule:
-                last_price = schedule[-1][2]
-                remaining_effective = (seg_hours - hours_covered) * discount_factor
-                total_cost += last_price * remaining_effective
-                all_overlaps.append((next_time, last_price, remaining_effective))
         
         current_time = next_time
 
