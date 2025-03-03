@@ -106,7 +106,6 @@ def get_pricing_schedule(boat_name, boarding_date):
         schedule.append((dt_start, dt_end, price))
     if not schedule:
         logging.warning("Для теплохода '%s' и даты %s не найдено подходящих тарифных строк.", boat_name, boarding_date)
-    schedule.sort(key=lambda x: x[0])
     return schedule
 
 def compute_overlap(seg_start, seg_end, int_start, int_end):
@@ -117,66 +116,74 @@ def compute_overlap(seg_start, seg_end, int_start, int_end):
 
 def calculate_rental_cost_and_breakdown(start_time, end_time, schedule, discount_factors):
     total_cost = 0.0
-    breakdown = []
+    all_overlaps = []
     
-    # Определяем сегменты аренды и их коэффициенты
-    time_points = [(start_time, discount_factors[0][1])]
+    # Сегменты аренды с коэффициентами
+    discount_points = [(start_time, discount_factors[0][1])]
     if len(discount_factors) > 1:
         boarding_dt = discount_factors[1][0]
         disembarking_dt = discount_factors[2][0]
-        time_points.append((boarding_dt, discount_factors[1][1]))
-        time_points.append((disembarking_dt, discount_factors[2][1]))
-    time_points.append((end_time, 0))
+        discount_points.append((boarding_dt, discount_factors[1][1]))
+        discount_points.append((disembarking_dt, discount_factors[2][1]))
+    discount_points.append((end_time, 0))
 
-    # Обрабатываем каждый сегмент аренды
-    for i in range(len(time_points) - 1):
-        seg_start = time_points[i][0]
-        seg_end = time_points[i + 1][0]
-        discount_factor = time_points[i][1]
-        seg_hours = (seg_end - seg_start).total_seconds() / 3600.0
+    # Обрабатываем весь интервал аренды последовательно
+    current_time = start_time
+    while current_time < end_time:
+        # Находим текущий discount_factor
+        discount_factor = 1.0
+        for i in range(len(discount_points) - 1):
+            if discount_points[i][0] <= current_time < discount_points[i + 1][0]:
+                discount_factor = discount_points[i][1]
+                break
+        
+        # Находим следующий переход (либо конец сегмента, либо конец аренды)
+        next_time = end_time
+        for dp_time, _ in discount_points:
+            if dp_time > current_time:
+                next_time = min(next_time, dp_time)
+                break
+        
+        seg_hours = (next_time - current_time).total_seconds() / 3600.0
         if seg_hours <= 0:
-            continue
+            break
         
-        # Список пересечений для текущего сегмента с указанием времени начала пересечения
-        seg_breakdown = []
         hours_covered = 0.0
-        
         for int_start, int_end, price in schedule:
-            overlap = compute_overlap(seg_start, seg_end, int_start, int_end)
+            overlap = compute_overlap(current_time, next_time, int_start, int_end)
             if overlap > 0:
-                overlap_start = max(seg_start, int_start)  # Время начала пересечения
+                overlap_start = max(current_time, int_start)
                 overlap_hours = min(overlap, seg_hours - hours_covered)
                 effective_overlap = overlap_hours * discount_factor
                 total_cost += price * effective_overlap
-                seg_breakdown.append((overlap_start, price, effective_overlap))
+                all_overlaps.append((overlap_start, price, effective_overlap))
                 hours_covered += overlap_hours
                 if hours_covered >= seg_hours:
                     break
-        
         if hours_covered < seg_hours - 0.01:
-            logging.warning(f"Интервал {seg_start}–{seg_end}: не все часы покрыты тарифами ({seg_hours - hours_covered} ч остались)")
+            logging.warning(f"Интервал {current_time}–{next_time}: не все часы покрыты тарифами ({seg_hours - hours_covered} ч остались)")
             if schedule:
                 last_price = schedule[-1][2]
                 remaining_effective = (seg_hours - hours_covered) * discount_factor
                 total_cost += last_price * remaining_effective
-                seg_breakdown.append((seg_end, last_price, remaining_effective))
+                all_overlaps.append((next_time, last_price, remaining_effective))
         
-        # Сортируем пересечения по времени начала внутри сегмента
-        seg_breakdown.sort(key=lambda x: x[0])
-        # Добавляем только цену и часы в breakdown
-        breakdown.extend([(price, hours) for _, price, hours in seg_breakdown])
+        current_time = next_time
+
+    # Сортируем по времени начала пересечения
+    all_overlaps.sort(key=lambda x: x[0])
     
-    # Агрегируем breakdown с сохранением порядка
+    # Агрегируем по тарифам с сохранением порядка
     agg = {}
     order = []
-    for price, hours in breakdown:
+    for _, price, hours in all_overlaps:
         if price not in agg:
             agg[price] = 0
             order.append(price)
         agg[price] += hours
     
-    final_breakdown = [(price, agg[price]) for price in order]
-    return total_cost, final_breakdown
+    breakdown = [(price, agg[price]) for price in order]
+    return total_cost, breakdown
 
 def format_breakdown(breakdown):
     parts = []
@@ -295,12 +302,19 @@ def calculate_rental(date_obj, boat_name, times):
     return result
 
 if __name__ == '__main__':
-    test_request = """09.08.25
+    test_requests = [
+        """09.08.25
 Миконос
-09:30-10:30-13:30-14:00"""
-    try:
-        date_obj, boat_name, times = parse_request(test_request)
-        result = calculate_rental(date_obj, boat_name, times)
-        print(result)
-    except Exception as e:
-        logging.error("Ошибка при расчёте: %s", e)
+09:30-10:30-13:30-14:00""",
+        """13.07.25
+Северное сияние
+15:30-16:30-22:30-23:30"""
+    ]
+    for test_request in test_requests:
+        try:
+            date_obj, boat_name, times = parse_request(test_request)
+            result = calculate_rental(date_obj, boat_name, times)
+            print(result)
+            print("\n" + "-"*50 + "\n")
+        except Exception as e:
+            logging.error("Ошибка при расчёте: %s", e)
