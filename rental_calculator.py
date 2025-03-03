@@ -163,13 +163,15 @@ def calculate_rental_cost_and_breakdown(start_time, end_time, schedule, discount
 def format_breakdown(breakdown):
     # Агрегируем часы по тарифам, сохраняя порядок первого появления
     agg = {}
+    order = []
     for price, hours in breakdown:
-        if price in agg:
-            agg[price] += hours
-        else:
-            agg[price] = hours
+        if price not in agg:
+            agg[price] = 0
+            order.append(price)
+        agg[price] += hours
     parts = []
-    for price, hours in agg.items():
+    for price in order:  # Используем порядок появления тарифов
+        hours = agg[price]
         formatted_price = f"{int(price):,}".replace(",", " ")
         parts.append(f"({formatted_price}₽/ч x {hours:.2f}ч)")
     return " + ".join(parts) if parts else "(0₽/ч x 0.00ч)"
