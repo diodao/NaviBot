@@ -117,7 +117,7 @@ def compute_overlap(seg_start, seg_end, int_start, int_end):
 
 def calculate_rental_cost_and_breakdown(start_time, end_time, schedule, discount_factors):
     total_cost = 0.0
-    breakdown = []
+    breakdown_with_time = []  # Сохраняем время начала для сортировки
     current_time = start_time
     remaining_hours = (end_time - start_time).total_seconds() / 3600.0
     
@@ -138,14 +138,14 @@ def calculate_rental_cost_and_breakdown(start_time, end_time, schedule, discount
             continue
         effective_hours = seg_hours * discount_factor
         hours_covered = 0.0
-        seg_breakdown = []
         for int_start, int_end, price in schedule:
             overlap = compute_overlap(seg_start, seg_end, int_start, int_end)
             if overlap > 0:
                 overlap_hours = min(overlap, seg_hours - hours_covered)
                 effective_overlap = overlap_hours * discount_factor
                 total_cost += price * effective_overlap
-                seg_breakdown.append((price, effective_overlap))
+                # Добавляем время начала интервала для сортировки
+                breakdown_with_time.append((int_start, price, effective_overlap))
                 hours_covered += overlap_hours
                 if hours_covered >= seg_hours:
                     break
@@ -155,9 +155,11 @@ def calculate_rental_cost_and_breakdown(start_time, end_time, schedule, discount
                 last_price = schedule[-1][2]
                 remaining_effective = (seg_hours - hours_covered) * discount_factor
                 total_cost += last_price * remaining_effective
-                seg_breakdown.append((last_price, remaining_effective))
-        breakdown.extend(seg_breakdown)
+                breakdown_with_time.append((seg_end, last_price, remaining_effective))
     
+    # Сортируем по времени начала, затем агрегируем по тарифам
+    breakdown_with_time.sort(key=lambda x: x[0])  # Сортировка по int_start
+    breakdown = [(price, hours) for _, price, hours in breakdown_with_time]
     return total_cost, breakdown
 
 def format_breakdown(breakdown):
