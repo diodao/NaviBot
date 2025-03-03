@@ -140,10 +140,44 @@ def calculate_segment_cost(seg_start, seg_end, schedule, discount_factor=1.0):
     
     return cost, breakdown
 
+def normalize_boat_name(name):
+    name_lower = name.strip().lower()
+    return [name_lower, name_lower.replace("е", "ё"), name_lower.replace("ё", "е")]
+
+def parse_request(message_text):
+    lines = [line.strip() for line in message_text.splitlines() if line.strip()]
+    if len(lines) < 3:
+        raise ValueError("Некорректный формат запроса. Должны быть не менее 3 строк.")
+    date_str = lines[0]
+    boat_name = lines[1]
+    times_str = lines[2]
+    time_parts = times_str.split("-")
+    normalized_times = []
+    for part in time_parts:
+        if ":" in part:
+            normalized_times.append(part)
+        else:
+            normalized_times.append(part + ":00")
+    if len(normalized_times) not in [2, 4]:
+        raise ValueError("Ожидается 2 или 4 временных значения.")
+    try:
+        date_obj = datetime.datetime.strptime(date_str, "%d.%m.%y").date()
+    except Exception as e:
+        raise ValueError("Неверный формат даты, ожидается dd.mm.yy.") from e
+    times = []
+    for t_str in normalized_times:
+        try:
+            t_obj = datetime.datetime.strptime(t_str, "%H:%M").time()
+            times.append(t_obj)
+        except Exception as e:
+            raise ValueError(f"Неверный формат времени: {t_str}") from e
+    return date_obj, boat_name, times
+
 def calculate_rental(date_obj, boat_name, times):
     data = get_data()
     boats_df = data["Теплоходы"]
-    boat_rows = boats_df[boats_df["Название теплохода"].str.strip().str.lower() == boat_name.lower()]
+    possible_names = normalize_boat_name(boat_name)
+    boat_rows = boats_df[boats_df["Название теплохода"].str.strip().str.lower().isin(possible_names)]
     if boat_rows.empty:
         raise ValueError(f"Теплоход '{boat_name}' не найден.")
     boat_info = boat_rows.iloc[0]
@@ -173,7 +207,7 @@ def calculate_rental(date_obj, boat_name, times):
         unloading_dt = disembarking_dt
 
     boarding_date = boarding_dt.date()
-    schedule = get_pricing_schedule(boat_name, boarding_date)
+    schedule = get_pricing_schedule(boat_info["Название теплохода"], boarding_date)
 
     if full_format:
         prep_cost, prep_breakdown = calculate_segment_cost(prep_start, boarding_dt, schedule, discount_factor=0.5)
@@ -205,7 +239,7 @@ def calculate_rental(date_obj, boat_name, times):
     if full_format:
         result = (
             f"*{date_obj.strftime('%d.%m.%y')}*\n\n"
-            f"*{boat_name}* - {link}\n"
+            f"*{boat_info['Название теплохода']}* - {link}\n"
             f"{fmt_time(prep_start)} - Подготовка (50%)\n"
             f"{fmt_time(boarding_dt)} - Посадка\n"
             f"{fmt_time(disembarking_dt)} - Высадка\n"
@@ -216,7 +250,7 @@ def calculate_rental(date_obj, boat_name, times):
     else:
         result = (
             f"*{date_obj.strftime('%d.%m.%y')}*\n\n"
-            f"*{boat_name}* - {link}\n"
+            f"*{boat_info['Название теплохода']}* - {link}\n"
             f"{fmt_time(boarding_dt)} - Посадка\n"
             f"{fmt_time(disembarking_dt)} - Высадка\n"
             f"Причал: {dock}\n"
