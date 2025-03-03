@@ -148,18 +148,24 @@ def calculate_rental_cost_and_breakdown(start_time, end_time, schedule, discount
         if seg_hours <= 0:
             break
         
-        hours_covered = 0.0
+        # Сортируем пересечения по времени начала для текущего сегмента
+        overlaps = []
         for int_start, int_end, price in schedule:
             overlap = compute_overlap(current_time, next_time, int_start, int_end)
             if overlap > 0:
                 overlap_start = max(current_time, int_start)
-                overlap_hours = min(overlap, seg_hours - hours_covered)
-                effective_overlap = overlap_hours * discount_factor
-                total_cost += price * effective_overlap
-                all_overlaps.append((overlap_start, price, effective_overlap))
-                hours_covered += overlap_hours
-                if hours_covered >= seg_hours:
-                    break
+                overlaps.append((overlap_start, price, overlap * discount_factor))
+        
+        # Добавляем пересечения в порядке времени начала
+        overlaps.sort(key=lambda x: x[0])
+        hours_covered = 0.0
+        for overlap_start, price, effective_hours in overlaps:
+            if hours_covered < seg_hours:
+                hours_to_add = min(effective_hours, seg_hours - hours_covered)
+                total_cost += price * hours_to_add
+                all_overlaps.append((overlap_start, price, hours_to_add))
+                hours_covered += hours_to_add
+        
         if hours_covered < seg_hours - 0.01:
             logging.warning(f"Интервал {current_time}–{next_time}: не все часы покрыты тарифами ({seg_hours - hours_covered} ч остались)")
             if schedule:
@@ -170,9 +176,6 @@ def calculate_rental_cost_and_breakdown(start_time, end_time, schedule, discount
         
         current_time = next_time
 
-    # Сортируем по времени начала пересечения
-    all_overlaps.sort(key=lambda x: x[0])
-    
     # Агрегируем по тарифам с сохранением порядка
     agg = {}
     order = []
