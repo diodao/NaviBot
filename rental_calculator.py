@@ -119,6 +119,7 @@ def calculate_segment_cost(seg_start, seg_end, schedule, discount_factor=1.0):
     cost = 0.0
     breakdown = []
     total_hours = (seg_end - seg_start).total_seconds() / 3600.0
+    effective_total_hours = total_hours * discount_factor
     hours_covered = 0.0
     
     overlaps = []
@@ -132,11 +133,11 @@ def calculate_segment_cost(seg_start, seg_end, schedule, discount_factor=1.0):
     
     for overlap_start, price, overlap_hours in overlaps:
         if hours_covered < total_hours:
-            hours_to_add = min(overlap_hours, total_hours - hours_covered)
-            effective_hours = hours_to_add * discount_factor
+            real_hours_to_add = min(overlap_hours, total_hours - hours_covered)
+            effective_hours = real_hours_to_add * discount_factor
             cost += price * effective_hours
             breakdown.append((overlap_start, price, effective_hours))
-            hours_covered += hours_to_add
+            hours_covered += real_hours_to_add
     
     return cost, breakdown
 
