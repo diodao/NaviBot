@@ -116,20 +116,18 @@ def compute_overlap(seg_start, seg_end, int_start, int_end):
     return max(delta, 0)
 
 def calculate_rental_cost_and_breakdown(start_time, end_time, schedule, discount_factors):
-    """Считает стоимость и breakdown для всего интервала с учётом тарифов и discount_factors."""
     total_cost = 0.0
     breakdown = []
     current_time = start_time
     remaining_hours = (end_time - start_time).total_seconds() / 3600.0
     
-    # Разбиваем интервал по точкам смены discount_factor
-    time_points = [(start_time, discount_factors[0][1])]  # Используем только коэффициент
+    time_points = [(start_time, discount_factors[0][1])]
     if len(discount_factors) > 1:
         boarding_dt = discount_factors[1][0]
         disembarking_dt = discount_factors[2][0]
         time_points.append((boarding_dt, discount_factors[1][1]))
         time_points.append((disembarking_dt, discount_factors[2][1]))
-    time_points.append((end_time, 0))  # Конец интервала
+    time_points.append((end_time, 0))
 
     for i in range(len(time_points) - 1):
         seg_start = time_points[i][0]
@@ -160,21 +158,18 @@ def calculate_rental_cost_and_breakdown(start_time, end_time, schedule, discount
                 seg_breakdown.append((last_price, remaining_effective))
         breakdown.extend(seg_breakdown)
     
-    # Собираем breakdown в порядке времени
-    agg_breakdown = []
-    seen_hours = 0.0
-    for price, hours in breakdown:  # Убрали сортировку, идём по порядку добавления
-        if seen_hours < remaining_hours:  # Ограничение по общему времени аренды
-            hours_to_add = min(hours, remaining_hours - seen_hours)
-            if hours_to_add > 0:
-                agg_breakdown.append((price, hours_to_add))
-                seen_hours += hours_to_add
-    
-    return total_cost, agg_breakdown
+    return total_cost, breakdown
 
 def format_breakdown(breakdown):
-    parts = []
+    # Агрегируем часы по тарифам, сохраняя порядок первого появления
+    agg = {}
     for price, hours in breakdown:
+        if price in agg:
+            agg[price] += hours
+        else:
+            agg[price] = hours
+    parts = []
+    for price, hours in agg.items():
         formatted_price = f"{int(price):,}".replace(",", " ")
         parts.append(f"({formatted_price}₽/ч x {hours:.2f}ч)")
     return " + ".join(parts) if parts else "(0₽/ч x 0.00ч)"
