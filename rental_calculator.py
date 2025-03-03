@@ -123,7 +123,7 @@ def calculate_rental_cost_and_breakdown(start_time, end_time, schedule, discount
     remaining_hours = (end_time - start_time).total_seconds() / 3600.0
     
     # Разбиваем интервал по точкам смены discount_factor
-    time_points = [(start_time, discount_factors[0])]
+    time_points = [(start_time, discount_factors[0][1])]  # Используем только коэффициент
     if len(discount_factors) > 1:
         boarding_dt = discount_factors[1][0]
         disembarking_dt = discount_factors[2][0]
@@ -163,9 +163,9 @@ def calculate_rental_cost_and_breakdown(start_time, end_time, schedule, discount
     # Собираем breakdown в порядке времени
     agg_breakdown = []
     seen_hours = 0.0
-    for price, hours in sorted(breakdown, key=lambda x: breakdown.index(x)):  # Сохраняем порядок добавления
-        if seen_hours < 3.75:  # Ограничение по общему времени аренды
-            hours_to_add = min(hours, 3.75 - seen_hours)
+    for price, hours in breakdown:  # Убрали сортировку, идём по порядку добавления
+        if seen_hours < remaining_hours:  # Ограничение по общему времени аренды
+            hours_to_add = min(hours, remaining_hours - seen_hours)
             if hours_to_add > 0:
                 agg_breakdown.append((price, hours_to_add))
                 seen_hours += hours_to_add
