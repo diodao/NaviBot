@@ -1,0 +1,22 @@
+[Unit]
+Description=NaviBot Backend (Gunicorn)
+After=network.target
+
+[Service]
+User=navibot
+Group=navibot
+WorkingDirectory=/opt/navibot
+EnvironmentFile=/opt/navibot/.env
+ExecStart=/opt/navibot/venv/bin/gunicorn \
+    --workers 2 \
+    --bind 127.0.0.1:5001 \
+    --timeout 120 \
+    --access-logfile /var/log/navibot/access.log \
+    --error-logfile /var/log/navibot/error.log \
+    app:app
+ExecReload=/bin/kill -s HUP $MAINPID
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

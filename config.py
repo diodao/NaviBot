@@ -1,11 +1,12 @@
 # config.py
 
-# Токен вашего бота (убедитесь, что он актуален)
-TOKEN = '6951228291:AAHpvIyR7hFX-THCFc2P7-lG8WqKFCrf5b4'
-
 # Пути к файлам
 RENTAL_DATA_FILE = 'rental_data.xlsx'
-LOG_FILE = 'bot.log'  # Изменили на относительный путь
+LOG_FILE = 'bot.log'
+
+# Flask
+FLASK_HOST = '0.0.0.0'
+FLASK_PORT = 5001
 
 # Форматы (для отображения и валидации)
 DATE_FORMAT = 'DD.MM.YY'

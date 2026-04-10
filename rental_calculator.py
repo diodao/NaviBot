@@ -1,40 +1,16 @@
-import pandas as pd
 import datetime
 import logging
-from config import RENTAL_DATA_FILE, CLEANING_COST
+from database import get_boat_by_name, get_pricing_schedule_db, get_boat_count
 
-# Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-_data_cache = None
-
-def load_data():
-    try:
-        boats_df = pd.read_excel(RENTAL_DATA_FILE, sheet_name="Теплоходы", engine="openpyxl")
-        prices_df = pd.read_excel(RENTAL_DATA_FILE, sheet_name="Цены", engine="openpyxl")
-        data = {"Теплоходы": boats_df, "Цены": prices_df}
-        logging.info("Данные успешно загружены из файла: %s", RENTAL_DATA_FILE)
-        return data
-    except Exception as e:
-        logging.error("Ошибка при загрузке данных из Excel: %s", e)
-        raise
-
-def get_data():
-    global _data_cache
-    if _data_cache is None:
-        _data_cache = load_data()
-    return _data_cache
-
-def refresh_data():
-    global _data_cache
-    _data_cache = load_data()
-    logging.info("Данные обновлены.")
 
 def parse_time_str(time_str):
     return datetime.datetime.strptime(time_str.strip(), "%H:%M").time()
+
 
 def parse_time_range(range_str):
     parts = range_str.split("-")
@@ -44,70 +20,6 @@ def parse_time_range(range_str):
     end = parse_time_str(parts[1])
     return start, end
 
-def weekday_short(dt):
-    mapping = {0:"Пн", 1:"Вт", 2:"Ср", 3:"Чт", 4:"Пт", 5:"Сб", 6:"Вс"}
-    return mapping[dt.weekday()]
-
-def weekday_in_range(day_short, range_str):
-    options = [opt.strip() for opt in range_str.split(",")]
-    for opt in options:
-        if "-" in opt:
-            start, end = opt.split("-")
-            start = start.strip()
-            end = end.strip()
-            week = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
-            if week.index(start) <= week.index(end):
-                if week.index(start) <= week.index(day_short) <= week.index(end):
-                    return True
-            else:
-                if week.index(day_short) >= week.index(start) or week.index(day_short) <= week.index(end):
-                    return True
-        else:
-            if day_short == opt:
-                return True
-    return False
-
-def get_pricing_schedule(boat_name, boarding_date):
-    data = get_data()
-    prices_df = data["Цены"]
-    schedule = []
-    if isinstance(boarding_date, datetime.datetime):
-        boarding_date = boarding_date.date()
-    day_short = weekday_short(datetime.datetime.combine(boarding_date, datetime.time(0,0)))
-    for _, row in prices_df.iterrows():
-        if str(row["Название теплохода"]).strip().lower() != boat_name.lower():
-            continue
-        try:
-            start_date = pd.to_datetime(row["Дата начала"]).date()
-            end_date = pd.to_datetime(row["Дата окончания"]).date()
-        except Exception as e:
-            logging.error("Ошибка парсинга дат в строке: %s", row)
-            continue
-        if not (start_date <= boarding_date <= end_date):
-            continue
-        day_range = str(row["День недели"]).strip()
-        if not weekday_in_range(day_short, day_range):
-            continue
-        time_range = str(row["Время"]).strip()
-        try:
-            t_start, t_end = parse_time_range(time_range)
-        except Exception as e:
-            logging.error("Ошибка парсинга временного диапазона: %s", time_range)
-            continue
-        dt_start = datetime.datetime.combine(boarding_date, t_start)
-        dt_end = datetime.datetime.combine(boarding_date, t_end)
-        if t_start >= t_end:
-            dt_end += datetime.timedelta(days=1)
-        price_raw = str(row["Стоимость (руб/ч)"]).replace(" ", "").replace(",", ".")
-        try:
-            price = float(price_raw)
-        except Exception:
-            price = 0.0
-        schedule.append((dt_start, dt_end, price))
-    if not schedule:
-        logging.warning("Для теплохода '%s' и даты %s не найдено подходящих тарифных строк.", boat_name, boarding_date)
-    schedule.sort(key=lambda x: x[0])
-    return schedule
 
 def compute_overlap(seg_start, seg_end, int_start, int_end):
     latest_start = max(seg_start, int_start)
@@ -115,42 +27,46 @@ def compute_overlap(seg_start, seg_end, int_start, int_end):
     delta = (earliest_end - latest_start).total_seconds() / 3600.0
     return max(delta, 0)
 
+
 def calculate_segment_cost_and_hours(seg_start, seg_end, schedule, discount_factor=1.0):
     total_hours = (seg_end - seg_start).total_seconds() / 3600.0
     effective_hours = total_hours * discount_factor
     cost = 0.0
     breakdown = []
-    hours_remaining = total_hours
-    
+    current_time = seg_start
+
     overlaps = []
     for int_start, int_end, price in schedule:
         overlap = compute_overlap(seg_start, seg_end, int_start, int_end)
         if overlap > 0:
             overlap_start = max(seg_start, int_start)
-            overlaps.append((overlap_start, price, overlap))
-    
-    overlaps.sort(key=lambda x: x[0])  # Сортировка по времени начала
-    
-    for overlap_start, price, overlap_hours in overlaps:
-        if hours_remaining > 0:
-            overlap_hours = min(overlap_hours, hours_remaining)
-            effective_overlap = overlap_hours * discount_factor
-            cost += price * effective_overlap
-            breakdown.append((overlap_start, price, effective_overlap))
-            hours_remaining -= overlap_hours
-    
-    if hours_remaining > 0.01:
-        logging.warning(f"Сегмент {seg_start}–{seg_end}: не все часы покрыты тарифами ({hours_remaining} ч остались)")
+            overlap_end = min(seg_end, int_end)
+            overlaps.append((overlap_start, overlap_end, price, overlap))
+
+    overlaps.sort(key=lambda x: x[0])
+
+    hours_covered = 0.0
+    for overlap_start, overlap_end, price, overlap_hours in overlaps:
+        if current_time < seg_end and overlap_start <= seg_end:
+            segment_end = min(overlap_end, seg_end)
+            hours = (segment_end - max(current_time, overlap_start)).total_seconds() / 3600.0
+            if hours > 0:
+                effective_hours_segment = hours * discount_factor
+                cost += price * effective_hours_segment
+                breakdown.append((max(current_time, overlap_start), price, effective_hours_segment))
+                hours_covered += hours
+                current_time = max(current_time, segment_end)
+
+    if abs(hours_covered - total_hours) > 0.01:
+        logging.warning(f"Сегмент {seg_start}–{seg_end}: не все часы покрыты тарифами ({total_hours - hours_covered:.2f} ч остались)")
         if schedule:
             last_price = schedule[-1][2]
-            cost += last_price * (hours_remaining * discount_factor)
-            breakdown.append((seg_end, last_price, hours_remaining * discount_factor))
-    
+            remaining_hours = total_hours - hours_covered
+            cost += last_price * (remaining_hours * discount_factor)
+            breakdown.append((seg_end, last_price, remaining_hours * discount_factor))
+
     return cost, breakdown, effective_hours
 
-def normalize_boat_name(name):
-    name_lower = name.strip().lower()
-    return [name_lower, name_lower.replace("е", "ё"), name_lower.replace("ё", "е")]
 
 def parse_request(message_text):
     lines = [line.strip() for line in message_text.splitlines() if line.strip()]
@@ -181,17 +97,15 @@ def parse_request(message_text):
             raise ValueError(f"Неверный формат времени: {t_str}") from e
     return date_obj, boat_name, times
 
+
 def calculate_rental(date_obj, boat_name, times):
-    data = get_data()
-    boats_df = data["Теплоходы"]
-    possible_names = normalize_boat_name(boat_name)
-    boat_rows = boats_df[boats_df["Название теплохода"].str.strip().str.lower().isin(possible_names)]
-    if boat_rows.empty:
+    boat = get_boat_by_name(boat_name)
+    if not boat:
         raise ValueError(f"Теплоход '{boat_name}' не найден.")
-    boat_info = boat_rows.iloc[0]
-    link = boat_info.get("Ссылка", f"https://example.com/{boat_name.lower()}")
-    dock = boat_info.get("Адрес причала", "Неизвестный причал")
-    cleaning_cost = boat_info.get("Стоимость уборки", CLEANING_COST)
+
+    link = boat.get('link', '')
+    dock = boat.get('dock', 'Неизвестный причал')
+    cleaning_cost = float(boat.get('cleaning_cost', 3000))
 
     full_format = (len(times) == 4)
     if full_format:
@@ -215,30 +129,31 @@ def calculate_rental(date_obj, boat_name, times):
         unloading_dt = disembarking_dt
 
     boarding_date = boarding_dt.date()
-    schedule = get_pricing_schedule(boat_info["Название теплохода"], boarding_date)
+    schedule = get_pricing_schedule_db(boat['name'], boarding_date)
 
     if full_format:
         prep_cost, prep_breakdown, prep_hours = calculate_segment_cost_and_hours(prep_start, boarding_dt, schedule, discount_factor=0.5)
         main_cost, main_breakdown, main_hours = calculate_segment_cost_and_hours(boarding_dt, disembarking_dt, schedule, discount_factor=1.0)
         unload_cost, unload_breakdown, unload_hours = calculate_segment_cost_and_hours(disembarking_dt, unloading_dt, schedule, discount_factor=0.5)
-        total_cost = prep_cost + main_cost + unload_cost + float(cleaning_cost)
+        total_cost = prep_cost + main_cost + unload_cost + cleaning_cost
         all_breakdown = prep_breakdown + main_breakdown + unload_breakdown
     else:
         main_cost, main_breakdown, main_hours = calculate_segment_cost_and_hours(boarding_dt, disembarking_dt, schedule, discount_factor=1.0)
-        total_cost = main_cost + float(cleaning_cost)
+        total_cost = main_cost + cleaning_cost
         all_breakdown = main_breakdown
 
-    # Сортируем breakdown по времени начала и агрегируем
-    all_breakdown.sort(key=lambda x: x[0])  # Сортировка по времени начала
+    # Агрегируем breakdown
+    all_breakdown.sort(key=lambda x: x[0])
     agg = {}
     order = []
-    for _, price, hours in all_breakdown:
+    for start_time, price, hours in all_breakdown:
         if price not in agg:
             agg[price] = 0
-            order.append(price)
+            order.append((start_time, price))
         agg[price] += hours
-    
-    breakdown = [(price, agg[price]) for price in order]
+
+    order.sort(key=lambda x: x[0])
+    breakdown = [(price, agg[price]) for _, price in order]
     breakdown_str = " + ".join(f"({int(price):,}₽/ч x {hours:.2f}ч)".replace(",", " ") for price, hours in breakdown)
 
     def fmt_time(dt):
@@ -247,7 +162,7 @@ def calculate_rental(date_obj, boat_name, times):
     if full_format:
         result = (
             f"*{date_obj.strftime('%d.%m.%y')}*\n\n"
-            f"*{boat_info['Название теплохода']}* - {link}\n"
+            f"*{boat['name']}* - {link}\n"
             f"{fmt_time(prep_start)} - Подготовка (50%)\n"
             f"{fmt_time(boarding_dt)} - Посадка\n"
             f"{fmt_time(disembarking_dt)} - Высадка\n"
@@ -258,7 +173,7 @@ def calculate_rental(date_obj, boat_name, times):
     else:
         result = (
             f"*{date_obj.strftime('%d.%m.%y')}*\n\n"
-            f"*{boat_info['Название теплохода']}* - {link}\n"
+            f"*{boat['name']}* - {link}\n"
             f"{fmt_time(boarding_dt)} - Посадка\n"
             f"{fmt_time(disembarking_dt)} - Высадка\n"
             f"Причал: {dock}\n"
@@ -266,20 +181,12 @@ def calculate_rental(date_obj, boat_name, times):
         )
     return result
 
-if __name__ == '__main__':
-    test_requests = [
-        """09.08.25
-Миконос
-09:30-10:30-13:30-14:00""",
-        """13.07.25
-Северное сияние
-15:30-16:30-22:30-23:30"""
-    ]
-    for test_request in test_requests:
-        try:
-            date_obj, boat_name, times = parse_request(test_request)
-            result = calculate_rental(date_obj, boat_name, times)
-            print(result)
-            print("\n" + "-"*50 + "\n")
-        except Exception as e:
-            logging.error("Ошибка при расчёте: %s", e)
+
+def refresh_data():
+    """Совместимость — теперь данные в SQLite, перечитывать не нужно."""
+    logging.info("Данные хранятся в SQLite, refresh не требуется.")
+
+
+def get_data():
+    """Совместимость — возвращает количество теплоходов."""
+    return {'boat_count': get_boat_count()}
