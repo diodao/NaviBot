@@ -807,9 +807,20 @@ html, body {
   background: #f0f4ff;
 }
 
-/* Combined dock+cleaning cell — hidden on desktop, shown on mobile */
-.boat-info-cell {
-  display: none;
+.btn-edit-icon {
+  background: none;
+  border: none;
+  color: #c0392b;
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+  transition: background 0.2s;
+  line-height: 1;
+}
+
+.btn-edit-icon:hover {
+  background: #fff0f0;
 }
 
 .boat-edit-form {
@@ -946,67 +957,38 @@ html, body {
     font-size: 0.8rem;
   }
 
-  /* Boats table — compact rows on mobile */
-  .boats-table-wrapper {
-    border: none;
-    max-height: none;
-    overflow-y: visible;
-  }
-
-  .boats-table thead {
-    display: none;
-  }
-
-  .boats-table,
-  .boats-table tbody {
-    display: block;
-    width: 100%;
-  }
-
-  .boats-table tr {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    grid-template-rows: auto auto;
-    gap: 0 8px;
-    padding: 10px 12px;
-    border-bottom: 1px solid #eee;
-    align-items: center;
-  }
-
+  /* Boats table — compact columns on mobile */
+  .boats-table th,
   .boats-table td {
-    padding: 0;
-    border-bottom: none;
+    padding: 6px 4px;
+    font-size: 0.75rem;
   }
 
-  .boats-table td.boat-name-cell {
-    grid-column: 1;
-    grid-row: 1;
-    font-weight: 600;
-    font-size: 0.9rem;
+  .boats-table th {
+    font-size: 0.7rem;
   }
 
-  .boats-table td.boat-dock-cell,
-  .boats-table td.boat-cleaning-cell {
-    display: none;
+  .boat-name-cell {
+    max-width: 90px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  .boats-table td.boat-info-cell {
-    display: block;
-    grid-column: 1;
-    grid-row: 2;
-    font-size: 0.8rem;
-    color: #888;
+  .boat-dock-cell {
+    max-width: 110px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  .boats-table td:last-child {
-    grid-column: 2;
-    grid-row: 1 / 3;
-    display: flex;
-    align-items: center;
+  .boat-cleaning-cell {
+    white-space: nowrap;
   }
 
-  .boats-table .row-editing {
-    background: #f0f4ff;
+  .boat-edit-cell {
+    width: 30px;
+    text-align: center;
   }
 
   /* Admin users table — compact on mobile */
