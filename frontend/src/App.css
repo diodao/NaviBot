@@ -1,9 +1,19 @@
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  overflow-x: hidden;
+  width: 100%;
+}
+
 .app {
   max-width: 700px;
   margin: 0 auto;
   padding: 20px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   color: #1a1a2e;
+  overflow-x: hidden;
 }
 
 .header {
@@ -194,6 +204,8 @@
   padding: 16px;
   border-radius: 8px;
   margin-bottom: 12px;
+  overflow: hidden;
+  max-width: 100%;
 }
 
 .result-card-header {
@@ -231,9 +243,13 @@
 .result-text {
   margin: 0;
   white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-word;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: 0.95rem;
   line-height: 1.6;
+  max-width: 100%;
 }
 
 .result-error {
@@ -771,6 +787,10 @@
   background: #f0f4ff;
 }
 
+.mobile-label {
+  display: none;
+}
+
 .boat-edit-form {
   background: #f8f9fc;
   padding: 20px;
@@ -891,5 +911,145 @@
 
   .sync-stats {
     grid-template-columns: 1fr;
+  }
+
+  .result-text {
+    font-size: 0.85rem;
+  }
+
+  .format-hint {
+    padding: 12px 14px;
+  }
+
+  .format-example code {
+    font-size: 0.8rem;
+  }
+
+  /* Boats table → card layout on mobile */
+  .boats-table-wrapper {
+    border: none;
+    max-height: none;
+  }
+
+  .boats-table thead {
+    display: none;
+  }
+
+  .boats-table,
+  .boats-table tbody,
+  .boats-table tr,
+  .boats-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .boats-table tr {
+    background: #fafafe;
+    border: 1px solid #e8e8f0;
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+  }
+
+  .boats-table td {
+    padding: 2px 0;
+    border-bottom: none;
+    font-size: 0.9rem;
+  }
+
+  .boats-table td:first-child {
+    font-weight: 600;
+    font-size: 0.95rem;
+    margin-bottom: 4px;
+  }
+
+  .boats-table td:last-child {
+    margin-top: 8px;
+  }
+
+  .boats-table td::before {
+    display: none;
+  }
+
+  .boats-table .row-editing {
+    background: #f0f4ff;
+  }
+
+  .mobile-label {
+    display: inline;
+    color: #888;
+    font-weight: 500;
+  }
+
+  /* Admin users table → card layout on mobile */
+  .admin-table thead {
+    display: none;
+  }
+
+  .admin-table,
+  .admin-table tbody,
+  .admin-table tr,
+  .admin-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .admin-table tr {
+    background: #fafafe;
+    border: 1px solid #e8e8f0;
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+  }
+
+  .admin-table td {
+    padding: 2px 0;
+    border-bottom: none;
+    font-size: 0.9rem;
+  }
+
+  .admin-table .admin-avatar-cell {
+    width: auto;
+    margin-bottom: 4px;
+  }
+
+  .admin-table .admin-actions {
+    margin-top: 8px;
+  }
+
+  /* Admin tabs scroll if too many */
+  .admin-tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .admin-tab {
+    padding: 10px 14px;
+    font-size: 0.85rem;
+    white-space: nowrap;
+  }
+
+  /* History entry buttons stack */
+  .history-entry-actions {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .history-entry-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  /* Login card padding on small screens */
+  .login-card {
+    margin: 16px;
+    padding: 28px 20px;
+  }
+
+  /* User bar compact */
+  .user-bar {
+    flex-wrap: wrap;
+    gap: 6px;
   }
 }
