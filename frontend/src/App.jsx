@@ -95,9 +95,10 @@ function LoginScreen({ onLogin }) {
         <p className="subtitle">Расчёт стоимости аренды теплоходов</p>
         <form onSubmit={handleSubmit} className="login-form">
           <input type="text" placeholder="Логин" value={username}
-            onChange={e => setUsername(e.target.value)} autoFocus />
+            onChange={e => setUsername(e.target.value)} autoFocus
+            autoCapitalize="none" autoCorrect="off" autoComplete="username" />
           <input type="password" placeholder="Пароль" value={password}
-            onChange={e => setPassword(e.target.value)} />
+            onChange={e => setPassword(e.target.value)} autoComplete="current-password" />
           {error && <div className="login-error">{error}</div>}
           <button type="submit" className="btn btn-primary" disabled={loading}>
             {loading ? 'Вхожу...' : 'Войти'}
