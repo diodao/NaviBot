@@ -748,6 +748,12 @@ html, body {
 
 /* === Boats Panel === */
 
+.boats-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 160px);
+}
+
 .boats-panel h3 {
   margin: 0 0 4px;
   color: #1a1a6e;
@@ -777,21 +783,48 @@ html, body {
 }
 
 .boats-table-wrapper {
-  max-height: 500px;
   overflow-y: auto;
   border: 1px solid #e8e8f0;
   border-radius: 8px;
+  flex: 1;
 }
 
 .boats-table {
+  width: 100%;
+  border-collapse: collapse;
   margin-bottom: 0;
 }
 
-.boats-table thead {
+.boats-table th,
+.boats-table td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid #eee;
+  font-size: 0.85rem;
+}
+
+.boats-table th {
   position: sticky;
   top: 0;
   background: #f8f9fc;
   z-index: 1;
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: #888;
+  white-space: nowrap;
+}
+
+.boats-table tbody tr {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.boats-table tbody tr:hover {
+  background: #f5f7ff;
+}
+
+.boats-table tbody tr:active {
+  background: #eef1ff;
 }
 
 .boat-name-cell a {
@@ -811,16 +844,21 @@ html, body {
   background: none;
   border: none;
   color: #c0392b;
-  font-size: 1.1rem;
+  font-size: 1rem;
   cursor: pointer;
-  padding: 4px 6px;
-  border-radius: 6px;
-  transition: background 0.2s;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background 0.15s;
   line-height: 1;
 }
 
 .btn-edit-icon:hover {
   background: #fff0f0;
+}
+
+.boat-edit-cell {
+  width: 28px;
+  text-align: center;
 }
 
 .boat-edit-form {
@@ -957,38 +995,32 @@ html, body {
     font-size: 0.8rem;
   }
 
-  /* Boats table — compact columns on mobile */
+  /* Boats table — tight on mobile */
+  .boats-table-wrapper {
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    margin: 0 -12px;
+  }
+
   .boats-table th,
   .boats-table td {
-    padding: 6px 4px;
-    font-size: 0.75rem;
+    padding: 7px 6px;
+    font-size: 0.78rem;
   }
 
   .boats-table th {
     font-size: 0.7rem;
   }
 
-  .boat-name-cell {
-    max-width: 90px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .boat-dock-cell {
-    max-width: 110px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .boat-cleaning-cell {
-    white-space: nowrap;
-  }
-
   .boat-edit-cell {
-    width: 30px;
-    text-align: center;
+    width: 24px;
+    padding: 4px 2px !important;
+  }
+
+  .btn-edit-icon {
+    font-size: 0.85rem;
+    padding: 2px;
   }
 
   /* Admin users table — compact on mobile */
