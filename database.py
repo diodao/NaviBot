@@ -50,7 +50,7 @@ def init_db():
             name TEXT UNIQUE NOT NULL,
             link TEXT DEFAULT '',
             dock TEXT DEFAULT '',
-            cleaning_cost REAL DEFAULT 3000,
+            cleaning_cost REAL DEFAULT 0,
             prep_hours REAL DEFAULT 1.0,
             unload_hours REAL DEFAULT 0.5,
             wp_slug TEXT DEFAULT NULL,
@@ -241,7 +241,7 @@ def get_boat_by_name(name):
     return dict(row) if row else None
 
 
-def create_boat(name, link='', dock='', cleaning_cost=3000, prep_hours=1.0, unload_hours=0.5, wp_slug=None):
+def create_boat(name, link='', dock='', cleaning_cost=0, prep_hours=1.0, unload_hours=0.5, wp_slug=None):
     conn = get_db()
     try:
         conn.execute(
