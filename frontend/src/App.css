@@ -807,6 +807,11 @@ html, body {
   background: #f0f4ff;
 }
 
+/* Combined dock+cleaning cell — hidden on desktop, shown on mobile */
+.boat-info-cell {
+  display: none;
+}
+
 .boat-edit-form {
   background: #f8f9fc;
   padding: 20px;
@@ -980,15 +985,17 @@ html, body {
     font-size: 0.9rem;
   }
 
-  .boats-table td:nth-child(2) {
+  .boats-table td.boat-dock-cell,
+  .boats-table td.boat-cleaning-cell {
+    display: none;
+  }
+
+  .boats-table td.boat-info-cell {
+    display: block;
     grid-column: 1;
     grid-row: 2;
     font-size: 0.8rem;
     color: #888;
-  }
-
-  .boats-table td:nth-child(3) {
-    display: none;
   }
 
   .boats-table td:last-child {

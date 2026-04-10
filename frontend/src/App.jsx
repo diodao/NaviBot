@@ -204,6 +204,7 @@ function BoatsPanel() {
               <th>Название</th>
               <th>Причал</th>
               <th>Уборка</th>
+              <th className="boat-info-cell"></th>
               <th></th>
             </tr>
           </thead>
@@ -213,8 +214,11 @@ function BoatsPanel() {
                 <td className="boat-name-cell">
                   {b.link ? <a href={b.link} target="_blank" rel="noreferrer">{b.name}</a> : b.name}
                 </td>
-                <td>{b.dock || '—'}</td>
-                <td>{b.cleaning_cost ? `${Number(b.cleaning_cost).toLocaleString('ru-RU')}₽` : '—'}</td>
+                <td className="boat-dock-cell">{b.dock || '—'}</td>
+                <td className="boat-cleaning-cell">{b.cleaning_cost ? `${Number(b.cleaning_cost).toLocaleString('ru-RU')}₽` : '—'}</td>
+                <td className="boat-info-cell">
+                  {b.dock || '—'}{b.cleaning_cost ? ` · ${Number(b.cleaning_cost).toLocaleString('ru-RU')}₽` : ''}
+                </td>
                 <td>
                   <button className="btn-small" onClick={() => startEdit(b)}>Изменить</button>
                 </td>
