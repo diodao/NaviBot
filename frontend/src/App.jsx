@@ -229,7 +229,7 @@ function BoatsPanel() {
 
 // === Admin Panel ===
 function AdminPanel({ onBack, user }) {
-  const [tab, setTab] = useState('users')
+  const [tab, setTab] = useState(user.role === 'admin' ? 'users' : 'boats')
   const [users, setUsers] = useState([])
   const [showForm, setShowForm] = useState(false)
   const [editUser, setEditUser] = useState(null)
@@ -342,6 +342,7 @@ function AdminPanel({ onBack, user }) {
   }
 
   const isAdmin = user.role === 'admin'
+  const isEditorOrAdmin = user.role === 'admin' || user.role === 'editor'
 
   return (
     <div className="admin-panel">
@@ -351,12 +352,16 @@ function AdminPanel({ onBack, user }) {
       </div>
 
       <div className="admin-tabs">
-        <button className={`admin-tab ${tab === 'users' ? 'active' : ''}`}
-          onClick={() => setTab('users')}>Пользователи</button>
+        {isAdmin && (
+          <button className={`admin-tab ${tab === 'users' ? 'active' : ''}`}
+            onClick={() => setTab('users')}>Пользователи</button>
+        )}
         <button className={`admin-tab ${tab === 'boats' ? 'active' : ''}`}
           onClick={() => setTab('boats')}>Теплоходы</button>
-        <button className={`admin-tab ${tab === 'sync' ? 'active' : ''}`}
-          onClick={() => setTab('sync')}>Синхронизация</button>
+        {isEditorOrAdmin && (
+          <button className={`admin-tab ${tab === 'sync' ? 'active' : ''}`}
+            onClick={() => setTab('sync')}>Синхронизация</button>
+        )}
       </div>
 
       {/* === Users Tab === */}
@@ -437,7 +442,7 @@ function AdminPanel({ onBack, user }) {
       {tab === 'boats' && <BoatsPanel />}
 
       {/* === Sync Tab === */}
-      {tab === 'sync' && isAdmin && (
+      {tab === 'sync' && isEditorOrAdmin && (
         <div className="sync-panel">
           <div className="sync-stats">
             <div className="sync-stat">

@@ -261,7 +261,7 @@ def sync_status():
 
 
 @app.route('/api/sync/wp', methods=['POST'])
-@admin_required
+@editor_required
 def sync_from_wp():
     """Синхронизация цен с WordPress через REST API (navibot/v1/prices)."""
     from wp_parser import parse_wp_boat
