@@ -161,23 +161,23 @@ def calculate_rental(date_obj, boat_name, times):
 
     if full_format:
         result = (
-            f"*{date_obj.strftime('%d.%m.%y')}*\n\n"
-            f"*{boat['name']}* - {link}\n"
+            f"**{date_obj.strftime('%d.%m.%y')}**\n\n"
+            f"**{boat['name']}** - {link}\n"
             f"{fmt_time(prep_start)} - Подготовка (50%)\n"
             f"{fmt_time(boarding_dt)} - Посадка\n"
             f"{fmt_time(disembarking_dt)} - Высадка\n"
             f"{fmt_time(unloading_dt)} - Разгрузка (50%)\n"
             f"Причал: {dock}\n"
-            f"Аренда: {breakdown_str} + {int(cleaning_cost)}₽ (уборка) = *{int(total_cost):,}*₽".replace(",", " ")
+            f"Аренда: {breakdown_str} + {int(cleaning_cost)}₽ (уборка) = **{int(total_cost):,}**₽".replace(",", " ")
         )
     else:
         result = (
-            f"*{date_obj.strftime('%d.%m.%y')}*\n\n"
-            f"*{boat['name']}* - {link}\n"
+            f"**{date_obj.strftime('%d.%m.%y')}**\n\n"
+            f"**{boat['name']}** - {link}\n"
             f"{fmt_time(boarding_dt)} - Посадка\n"
             f"{fmt_time(disembarking_dt)} - Высадка\n"
             f"Причал: {dock}\n"
-            f"Аренда: {breakdown_str} + {int(cleaning_cost)}₽ (уборка) = *{int(total_cost):,}*₽".replace(",", " ")
+            f"Аренда: {breakdown_str} + {int(cleaning_cost)}₽ (уборка) = **{int(total_cost):,}**₽".replace(",", " ")
         )
     return result
 
