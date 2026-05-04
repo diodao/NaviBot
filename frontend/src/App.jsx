@@ -58,7 +58,7 @@ function formatResult(text) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/\*([^*]+)\*/g, '<strong>$1</strong>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
 }
 
 const ROLE_LABELS = { admin: 'Админ', editor: 'Редактор', manager: 'Менеджер' }
