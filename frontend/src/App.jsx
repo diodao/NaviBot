@@ -604,7 +604,7 @@ function App() {
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={"16.08.26\nШустрый бобер\n16-17-23-23:30"}
+            placeholder={"16.08.26\nХемингуэй\n16-17-23-23:30"}
             rows={6}
           />
 
