@@ -293,6 +293,21 @@ def get_prices_for_boat(boat_id):
     return [dict(r) for r in rows]
 
 
+def _parse_time_with_24(time_str):
+    """Парсит время с поддержкой 24:00 как 00:00 следующего дня.
+
+    Возвращает (datetime.time, day_offset).
+    Примеры:
+        '07:00' → (time(7,0), 0)
+        '24:00' → (time(0,0), 1)  # 00:00 следующего дня
+    """
+    import datetime as dt
+    s = time_str.strip()
+    if s == '24:00':
+        return dt.time(0, 0), 1
+    return dt.datetime.strptime(s, "%H:%M").time(), 0
+
+
 def get_pricing_schedule_db(boat_name, boarding_date):
     """Получить тарифные интервалы для теплохода на дату — аналог get_pricing_schedule из rental_calculator."""
     import datetime as dt
@@ -327,14 +342,14 @@ def get_pricing_schedule_db(boat_name, boarding_date):
             continue
 
         try:
-            t_start = dt.datetime.strptime(row['time_start'].strip(), "%H:%M").time()
-            t_end = dt.datetime.strptime(row['time_end'].strip(), "%H:%M").time()
+            t_start, start_day_offset = _parse_time_with_24(row['time_start'])
+            t_end, end_day_offset = _parse_time_with_24(row['time_end'])
         except (ValueError, TypeError):
             continue
 
-        dt_start = dt.datetime.combine(boarding_date, t_start)
-        dt_end = dt.datetime.combine(boarding_date, t_end)
-        if t_start >= t_end:
+        dt_start = dt.datetime.combine(boarding_date, t_start) + dt.timedelta(days=start_day_offset)
+        dt_end = dt.datetime.combine(boarding_date, t_end) + dt.timedelta(days=end_day_offset)
+        if dt_start >= dt_end:
             dt_end += dt.timedelta(days=1)
 
         schedule.append((dt_start, dt_end, float(row['price_per_hour'])))
